@@ -9,9 +9,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-echo "======================================"
-echo "  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE"
-echo "======================================"
+echo -e "${BOLD}${CYAN}======================================${NC}"
+echo -e "${BOLD}${CYAN}  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE${NC}"
+echo -e "${BOLD}${CYAN}======================================${NC}"
 
 # -------------------------------------------------
 # 1. Kiểm tra backup_data đính kèm
@@ -93,9 +93,17 @@ cd "$TARGET_DIR"
 # -------------------------------------------------
 echo "📋 Sao chép cấu hình..."
 cp "$BACKUP_DIR/config/.env" "$TARGET_DIR/"
-cp "$BACKUP_DIR/config/docker-compose.yml" "$TARGET_DIR/"
-if [ -f "$BACKUP_DIR/config/volumes.tar.gz" ]; then
-    tar xzf "$BACKUP_DIR/config/volumes.tar.gz" -C "$TARGET_DIR/"
+
+# Phục hồi volumes (ưu tiên thư mục, sau đó mới đến file nén)
+if [ -d "$BACKUP_DIR/volumes" ] && [ "$(ls -A "$BACKUP_DIR/volumes" 2>/dev/null)" ]; then
+    echo "📂 Phục hồi thư mục volumes..."
+    cp -r "$BACKUP_DIR/volumes" "$TARGET_DIR/"
+    echo "✅ Volumes đã được phục hồi (bao gồm functions, db/init, api...)."
+elif [ -f "$BACKUP_DIR/config/volumes.tar.gz" ]; then
+    echo "📂 Giải nén volumes từ backup..."
+    tar xzf "$BACKUP_DIR/config/volumes.tar.gz" -C "$TARGET_DIR/" 2>/dev/null || echo -e "${YELLOW}⚠️ Một số file volumes không được giải nén (có thể thiếu quyền).${NC}"
+else
+    echo -e "${YELLOW}⚠️ Không tìm thấy dữ liệu volumes trong backup.${NC}"
 fi
 
 # -------------------------------------------------

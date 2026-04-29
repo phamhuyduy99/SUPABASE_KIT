@@ -21,7 +21,7 @@ source "$SCRIPT_DIR/common.sh"
 # Xác định PROJECT_DIR: ưu tiên tham số, sau đó tự dò, cuối cùng hỏi người dùng
 if [ -n "$1" ] && [ "$1" != "--cron" ]; then
     PROJECT_DIR="$1"
-elif validate_supabase_dir "$SCRIPT_DIR"; then
+    elif validate_supabase_dir "$SCRIPT_DIR"; then
     PROJECT_DIR="$SCRIPT_DIR"
 else
     PROJECT_DIR=$(auto_find_supabase_dir "$SCRIPT_DIR")
@@ -31,10 +31,10 @@ else
     fi
 fi
 
-echo "======================================"
-echo "  🧊 ĐÓNG BĂNG HỆ THỐNG SUPABASE"
-echo "======================================"
-echo "Thư mục dự án: $PROJECT_DIR"
+echo -e "${BOLD}${CYAN}======================================${NC}"
+echo -e "${BOLD}${CYAN}  🧊 ĐÓNG BĂNG HỆ THỐNG SUPABASE${NC}"
+echo -e "${BOLD}${CYAN}======================================${NC}"
+echo -e "Thư mục dự án: ${MAGENTA}$PROJECT_DIR${NC}"
 
 # ------------------------------------------------------------
 # 0. Kiểm tra dung lượng đĩa trước khi backup (cần ~500MB)
@@ -128,18 +128,35 @@ cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/" 2>/dev/null
 # ------------------------------------------------------------
 # 6. Sao lưu cấu hình (bỏ qua db/data để tránh lỗi permission)
 # ------------------------------------------------------------
-echo "1/4 Sao lưu cấu hình..."
+echo -e "${BOLD}1/4 Sao lưu cấu hình...${NC}"
 cp "$PROJECT_DIR/.env" "$PACK_DIR/backup_data/config/" || { echo -e "${RED}❌ Không thể copy .env.${NC}"; exit 1; }
 cp "$PROJECT_DIR/docker-compose.yml" "$PACK_DIR/backup_data/config/"
+
 if [ -d "$PROJECT_DIR/volumes" ]; then
-    # Nén riêng thư mục volumes (trừ db/data) để tránh lỗi permission
-    tar czf "$PACK_DIR/backup_data/config/volumes.tar.gz" -C "$PROJECT_DIR" volumes --exclude='volumes/db/data' --warning=no-file-changed 2>/dev/null || echo -e "${YELLOW}⚠️ Không thể sao lưu một số file cấu hình volumes. Bỏ qua.${NC}"
+    echo -e "${BOLD}   Đang sao lưu thư mục volumes (bỏ qua db/data và logs)...${NC}"
+    VOL_ERR_LOG="/tmp/vol_copy_err_$$.log"
+    # Copy tất cả thư mục con (trừ db và logs)
+    find "$PROJECT_DIR/volumes" -mindepth 1 -maxdepth 1 ! -name 'db' ! -name 'logs' -exec cp -r {} "$PACK_DIR/backup_data/volumes/" \; 2>"$VOL_ERR_LOG"
+    # Xử lý riêng db/init nếu có
+    if [ -d "$PROJECT_DIR/volumes/db/init" ]; then
+        mkdir -p "$PACK_DIR/backup_data/volumes/db"
+        cp -r "$PROJECT_DIR/volumes/db/init" "$PACK_DIR/backup_data/volumes/db/" 2>>"$VOL_ERR_LOG"
+    fi
+    if [ -s "$VOL_ERR_LOG" ]; then
+        echo -e "${YELLOW}⚠️ Một số file không thể sao lưu (chi tiết trong $VOL_ERR_LOG):${NC}"
+        cat "$VOL_ERR_LOG"
+    else
+        echo -e "${GREEN}   ✅ Volumes đã được sao lưu đầy đủ.${NC}"
+    fi
+    rm -f "$VOL_ERR_LOG"
+else
+    echo -e "${YELLOW}⚠️ Không tìm thấy thư mục volumes. Bỏ qua.${NC}"
 fi
 
 # ------------------------------------------------------------
 # 7. Sao lưu database
 # ------------------------------------------------------------
-echo "2/4 Sao lưu database..."
+echo -e "${BOLD}2/4 Sao lưu database...${NC}"
 if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$PACK_DIR/backup_data/database/full_backup.sql.gz"; then
     echo "   -> Database đã được dump thành công."
 else
@@ -151,11 +168,11 @@ fi
 # ------------------------------------------------------------
 # 8. Sao lưu storage
 # ------------------------------------------------------------
-echo "3/4 Sao lưu storage..."
+echo -e "${BOLD}3/4 Sao lưu storage...${NC}"
 STORAGE_VOL=$(docker volume ls -q | grep _storage)
 if [ -n "$STORAGE_VOL" ]; then
     docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v "$PACK_DIR/backup_data/storage:/backup" alpine \
-        sh -c "cd /mnt/storage && tar czf /backup/storage.tar.gz ."
+    sh -c "cd /mnt/storage && tar czf /backup/storage.tar.gz ."
     echo "   -> Storage (Docker volume) đã được backup."
 else
     if [ -d "$PROJECT_DIR/volumes/storage" ]; then
@@ -169,7 +186,7 @@ fi
 # ------------------------------------------------------------
 # 9. Nén toàn bộ thư mục PACK_NAME thành file .tar.gz
 # ------------------------------------------------------------
-echo "4/4 Đóng gói..."
+echo -e "${BOLD}4/4 Đóng gói...${NC}"
 cd "$TMP_ROOT"
 tar czf "$BACKUP_FILE" "$PACK_NAME"
 rm -rf "$TMP_ROOT"
@@ -191,7 +208,7 @@ if [ -n "$REMOTE" ]; then
         echo "   Sau đó, các lần đồng bộ sau sẽ tự động."
         echo ""
     fi
-
+    
     # Kiểm tra kết nối SSH (thử lệnh đơn giản)
     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${REMOTE}" 'echo "OK"' >/dev/null 2>&1; then
         # Tạo thư mục backups trên remote nếu chưa có
@@ -204,11 +221,11 @@ if [ -n "$REMOTE" ]; then
         echo "   - Firewall chặn cổng 22."
         echo "   Sẽ thử đồng bộ bằng rsync, bạn có thể phải nhập mật khẩu."
     fi
-
+    
     # Thực hiện rsync
     rsync -avz -e "ssh -o StrictHostKeyChecking=no" "$BACKUP_FILE" "${REMOTE}:~/backups/" && {
         echo -e "${GREEN}✅ Đồng bộ thành công tới ${REMOTE}:~/backups/$(basename "$BACKUP_FILE")${NC}"
-    } || {
+        } || {
         echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
         echo "   Vui lòng kiểm tra:"
         echo "   - Kết nối SSH tới $REMOTE có hoạt động không?"
@@ -232,7 +249,7 @@ fi
 if [[ "$1" != "--cron" ]]; then
     read -p "⏰ Bạn có muốn tự động backup hàng ngày lúc 2h sáng? (y/n): " ans
     if [ "$ans" = "y" ]; then
-        SCRIPT_PATH=$(realpath "$0")
+        SCRIPT_PATH="$SCRIPT_DIR/supa-freeze.sh"
         CRON_LINE="0 2 * * * $SCRIPT_PATH --cron $PROJECT_DIR"
         (crontab -l 2>/dev/null; echo "$CRON_LINE") | sort -u | crontab -
         echo -e "${GREEN}✅ Cron job đã được thêm. Hệ thống sẽ tự động backup lúc 2h sáng mỗi ngày.${NC}"
