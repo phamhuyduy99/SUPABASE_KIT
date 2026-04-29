@@ -5,8 +5,6 @@
 # Tích hợp upload Google Drive nếu cần,
 # kiểm tra dung lượng ổ đĩa trước khi backup,
 # xử lý trường hợp thiếu sudo khi cần cài rsync.
-# Bỏ qua thư mục db/data khi backup volumes để tránh lỗi permission.
-# tự động hướng dẫn thiết lập SSH key cho đồng bộ.
 # ==============================================
 
 # KHÔNG dùng set -e để tránh script dừng đột ngột khi có lỗi nhỏ
@@ -57,12 +55,13 @@ echo "📌 Container database: $DB_CONT"
 read -p "Nhập user@IP của VPS dự phòng (Enter nếu không đồng bộ): " REMOTE
 if [ -n "$REMOTE" ] && ! command -v rsync &> /dev/null; then
     echo "📦 Cần cài đặt rsync để đồng bộ."
+    # Kiểm tra sudo: nếu không có sudo, không thể cài, thông báo và bỏ qua đồng bộ
     if ! sudo -n true 2>/dev/null; then
         echo -e "${YELLOW}Bạn không có quyền sudo, không thể tự động cài rsync.${NC}"
         echo "   Bạn có thể nhờ quản trị viên cài giúp: sudo apt install -y rsync"
         echo "   Hoặc bỏ qua đồng bộ từ xa lần này."
         read -p "Nhấn Enter để tiếp tục (sẽ bỏ qua đồng bộ)..." dummy
-        REMOTE=""
+        REMOTE=""   # Đặt lại để không đồng bộ
     else
         wait_for_apt_lock || exit 1
         sudo apt install -y rsync
@@ -73,22 +72,27 @@ fi
 # 3. Hỏi upload lên Google Drive (nếu muốn) – logic mới
 # ------------------------------------------------------------
 UPLOAD_DRIVE="n"
+# Nếu rclone đã có và có remote gdrive, hỏi trực tiếp
 if command -v rclone &> /dev/null && rclone listremotes | grep -q "^gdrive:"; then
     read -p "📤 Upload backup lên Google Drive? (y/n): " UPLOAD_DRIVE
 else
+    # Nếu chưa có rclone hoặc remote, hỏi có muốn cấu hình không
     if [[ "$1" != "--cron" ]]; then
         echo -e "${YELLOW}📤 Bạn có muốn upload backup lên Google Drive không?${NC}"
         echo "   (Yêu cầu cấu hình rclone một lần duy nhất)"
         read -p "   Lựa chọn (y/n): " UPLOAD_DRIVE
         if [ "$UPLOAD_DRIVE" = "y" ]; then
+            # Nếu chưa có rclone, cài đặt
             if ! command -v rclone &> /dev/null; then
                 ensure_rclone_gdrive || UPLOAD_DRIVE="n"
             fi
+            # Nếu đã có rclone nhưng chưa có remote gdrive, gợi ý cấu hình
             if [ "$UPLOAD_DRIVE" = "y" ] && ! rclone listremotes | grep -q "^gdrive:"; then
                 echo -e "${YELLOW}⚠️ Remote 'gdrive' chưa được cấu hình.${NC}"
                 read -p "Bạn có muốn chạy trình cấu hình Google Drive ngay bây giờ không? (y/n): " setup_gdrive
                 if [ "$setup_gdrive" = "y" ]; then
                     bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
+                    # Sau khi cấu hình xong, kiểm tra lại xem đã có remote chưa
                     if rclone listremotes | grep -q "^gdrive:"; then
                         echo -e "${GREEN}✅ Đã cấu hình Google Drive thành công.${NC}"
                     else
@@ -113,22 +117,15 @@ mkdir -p $TMP/{config,database,storage,scripts}
 echo "📁 Bắt đầu sao lưu..."
 
 # ------------------------------------------------------------
-# 5. Sao lưu cấu hình (bỏ qua thư mục db/data để tránh lỗi permission)
+# 5. Sao lưu cấu hình
 # ------------------------------------------------------------
 echo "1/4 Sao lưu cấu hình..."
 cp "$PROJECT_DIR/.env" "$TMP/config/" || { echo -e "${RED}❌ Không thể copy .env. Kiểm tra quyền đọc.${NC}"; exit 1; }
 cp "$PROJECT_DIR/docker-compose.yml" "$TMP/config/"
-if [ -d "$PROJECT_DIR/volumes" ]; then
-    # Nén volumes nhưng LOẠI TRỪ thư mục dữ liệu database vật lý (đã được dump riêng)
-    # Sử dụng tar để tránh lỗi Permission denied với các file thuộc quyền postgres
-    tar czf "$TMP/config/volumes.tar.gz" -C "$PROJECT_DIR" volumes --exclude='volumes/db/data' --warning=no-file-changed 2>/dev/null || echo -e "${YELLOW}⚠️ Không thể sao lưu một số file cấu hình volumes (có thể thiếu quyền đọc). Bỏ qua.${NC}"
-    mkdir -p "$TMP/config/volumes"
-    tar xzf "$TMP/config/volumes.tar.gz" -C "$TMP/config/" 2>/dev/null || true
-    rm -f "$TMP/config/volumes.tar.gz"
-fi
+[ -d "$PROJECT_DIR/volumes" ] && cp -r "$PROJECT_DIR/volumes" "$TMP/config/"
 
 # ------------------------------------------------------------
-# 6. Sao lưu database
+# 6. Sao lưu database (pg_dumpall để bao gồm cả roles)
 # ------------------------------------------------------------
 echo "2/4 Sao lưu database..."
 if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$TMP/database/full_backup.sql.gz"; then
@@ -149,6 +146,7 @@ if [ -n "$STORAGE_VOL" ]; then
         sh -c "cd /mnt/storage && tar czf /backup/storage.tar.gz ."
     echo "   -> Storage (Docker volume) đã được backup."
 else
+    # Thử bind mount
     if [ -d "$PROJECT_DIR/volumes/storage" ]; then
         tar czf "$TMP/storage/storage.tar.gz" -C "$PROJECT_DIR/volumes/storage" .
         echo "   -> Storage (bind mount) đã được backup."
@@ -158,14 +156,14 @@ else
 fi
 
 # ------------------------------------------------------------
-# 8. Tự copy script kit vào backup
+# 8. Tự copy script kit vào backup (để sau này restore có thể dùng lại)
 # ------------------------------------------------------------
 cp "$SCRIPT_DIR"/supa-*.sh "$TMP/scripts/" 2>/dev/null
 cp "$SCRIPT_DIR"/common.sh "$TMP/scripts/" 2>/dev/null
 [ -f "$SCRIPT_DIR/README.txt" ] && cp "$SCRIPT_DIR/README.txt" "$TMP/scripts/"
 
 # ------------------------------------------------------------
-# 9. Đóng gói
+# 9. Đóng gói thành file .tar.gz
 # ------------------------------------------------------------
 echo "4/4 Đóng gói..."
 tar czf "$BACKUP_FILE" -C "$TMP" .
@@ -173,46 +171,12 @@ rm -rf "$TMP"
 echo -e "${GREEN}✅ Backup thành công: $BACKUP_FILE${NC}"
 
 # ------------------------------------------------------------
-# 10. Đồng bộ sang VPS dự phòng (tự động hướng dẫn SSH key)
+# 10. Đồng bộ sang VPS dự phòng (nếu có)
 # ------------------------------------------------------------
 if [ -n "$REMOTE" ]; then
     echo "☁️ Đồng bộ sang $REMOTE..."
-    # Kiểm tra SSH key
-    if [ ! -f ~/.ssh/id_rsa ]; then
-        echo "🔑 Chưa có SSH key. Đang tạo cặp key mới..."
-        ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
-        echo "✅ Đã tạo SSH key tại ~/.ssh/id_rsa"
-        echo "👉 Để đồng bộ không cần mật khẩu, hãy copy public key sang VPS đích:"
-        echo "   ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
-        echo "   Bạn sẽ được hỏi mật khẩu của VPS đích MỘT LẦN duy nhất."
-        echo "   Sau đó, các lần đồng bộ sau sẽ tự động."
-        echo ""
-    fi
-
-    # Kiểm tra kết nối SSH (thử lệnh đơn giản)
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${REMOTE}" 'echo "OK"' >/dev/null 2>&1; then
-        # Tạo thư mục backups trên remote nếu chưa có
-        ssh -o StrictHostKeyChecking=no "${REMOTE}" 'mkdir -p ~/backups' 2>/dev/null
-    else
-        echo -e "${YELLOW}⚠️ Không thể kết nối SSH tới $REMOTE.${NC}"
-        echo "   Lỗi thường gặp:"
-        echo "   - Chưa copy public key sang VPS đích (chạy lệnh ssh-copy-id ở trên)."
-        echo "   - IP hoặc user không chính xác."
-        echo "   - Firewall chặn cổng 22."
-        echo "   Sẽ thử đồng bộ bằng rsync, bạn có thể phải nhập mật khẩu."
-    fi
-
-    # Thực hiện rsync
-    rsync -avz -e "ssh -o StrictHostKeyChecking=no" "$BACKUP_FILE" "${REMOTE}:~/backups/" && {
-        echo -e "${GREEN}✅ Đồng bộ thành công tới ${REMOTE}:~/backups/$(basename "$BACKUP_FILE")${NC}"
-    } || {
-        echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
-        echo "   Vui lòng kiểm tra:"
-        echo "   - Kết nối SSH tới $REMOTE có hoạt động không?"
-        echo "   - Bạn đã copy public key sang VPS đích: ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
-        echo "   - Thư mục ~/backups có tồn tại và bạn có quyền ghi không?"
-        echo "   - Dung lượng ổ đĩa trên VPS đích còn đủ không?"
-    }
+    rsync -avz -e "ssh -o StrictHostKeyChecking=no" "$BACKUP_FILE" "${REMOTE}:/home/ubuntu/backups/" || \
+        echo -e "${RED}❌ Đồng bộ thất bại. Kiểm tra SSH key và kết nối.${NC}"
 fi
 
 # ------------------------------------------------------------
