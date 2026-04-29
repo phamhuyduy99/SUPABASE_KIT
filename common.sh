@@ -192,7 +192,7 @@ auto_chmod_sh() {
 # Đảm bảo rclone đã cài và remote gdrive đã được cấu hình
 ensure_rclone_gdrive() {
     if ! command -v rclone &> /dev/null; then
-        echo -e "${YELLOW}rclone chưa cài đặt. Cần để upload lên Google Drive.${NC}"
+        echo -e "${YELLOW}rclone chưa cài đặt. Cần để upload/tải từ Google Drive.${NC}"
         read -p "Cài đặt rclone ngay? (y/n): " install_rclone
         if [ "$install_rclone" = "y" ]; then
             if ! sudo -n true 2>/dev/null; then

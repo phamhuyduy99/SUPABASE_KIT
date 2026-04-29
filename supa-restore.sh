@@ -35,9 +35,25 @@ else
     while true; do
         read -p "Đường dẫn file backup (.tar.gz), URL, hoặc remote rclone: " SRC
         if [[ "$SRC" =~ ^gdrive: ]]; then
+            # Đảm bảo rclone đã cài và có remote gdrive
             if ! command -v rclone &> /dev/null; then
-                echo -e "${RED}rclone chưa cài đặt. Không thể tải từ Google Drive.${NC}"
-                exit 1
+                echo -e "${YELLOW}rclone chưa cài đặt. Đang thử cài đặt...${NC}"
+                if ! ensure_rclone_gdrive; then
+                    echo -e "${RED}Không thể cài rclone. Vui lòng cài thủ công hoặc chọn nguồn backup khác.${NC}"
+                    continue  # quay lại hỏi nguồn backup
+                fi
+            fi
+            # Kiểm tra remote gdrive đã có chưa, nếu chưa thì gợi ý cấu hình
+            if ! rclone listremotes | grep -q "^gdrive:"; then
+                echo -e "${YELLOW}Remote 'gdrive' chưa được cấu hình.${NC}"
+                read -p "Bạn có muốn cấu hình ngay không? (y/n): " setup_gdrive
+                if [ "$setup_gdrive" = "y" ]; then
+                    bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
+                fi
+                if ! rclone listremotes | grep -q "^gdrive:"; then
+                    echo -e "${RED}Chưa cấu hình Google Drive. Vui lòng thử lại sau khi cấu hình.${NC}"
+                    continue
+                fi
             fi
             LOCAL_FILE="/tmp/restore-backup.tar.gz"
             download_from_gdrive "$SRC" "$LOCAL_FILE" || continue
