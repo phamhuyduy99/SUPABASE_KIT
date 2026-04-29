@@ -79,6 +79,7 @@ if [ -n "$REMOTE" ] && ! command -v rsync &> /dev/null; then
     else
         wait_for_apt_lock || exit 1
         sudo apt install -y rsync
+        echo ""   # Thêm dòng này để tách biệt output
     fi
 fi
 

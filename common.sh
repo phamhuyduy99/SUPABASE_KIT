@@ -195,9 +195,19 @@ ensure_rclone_gdrive() {
         echo -e "${YELLOW}rclone chưa cài đặt. Cần để upload lên Google Drive.${NC}"
         read -p "Cài đặt rclone ngay? (y/n): " install_rclone
         if [ "$install_rclone" = "y" ]; then
-            sudo -v
+            if ! sudo -n true 2>/dev/null; then
+                echo -e "${RED}❌ Bạn cần quyền sudo để cài đặt rclone.${NC}"
+                echo "   Hãy chạy: sudo bash supa-start.sh"
+                echo "   hoặc tự cài rclone theo hướng dẫn tại https://rclone.org/install/"
+                return 1
+            fi
             curl https://rclone.org/install.sh | sudo bash
-            echo -e "${GREEN}✅ rclone đã được cài đặt.${NC}"
+            # Kiểm tra lại sau khi cài
+            if ! command -v rclone &> /dev/null; then
+                echo -e "${RED}❌ Cài đặt rclone thất bại. Vui lòng thử lại hoặc cài thủ công.${NC}"
+                return 1
+            fi
+            echo -e "${GREEN}✅ rclone đã được cài đặt thành công.${NC}"
         else
             echo "Bỏ qua cài đặt rclone."
             return 1

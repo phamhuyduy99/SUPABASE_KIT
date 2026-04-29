@@ -70,24 +70,26 @@ configure_gdrive_with_token() {
         return 1
     fi
 
-    cat > /tmp/rclone_gdrive.conf <<EOF
+    # Ghi file cấu hình rclone tạm thời một cách an toàn
+    cat > /tmp/rclone_gdrive.conf <<'EOF'
 [gdrive]
 type = drive
 scope = drive
-token = $token
 EOF
+    printf 'token = %s\n' "$token" >> /tmp/rclone_gdrive.conf
 
-    # Thông báo rõ ràng trước khi xác thực
     echo -e "\n🔍 Đang xác thực token với Google Drive. Vui lòng đợi trong giây lát..."
     if rclone --config /tmp/rclone_gdrive.conf lsd gdrive: >/dev/null 2>&1; then
         mkdir -p ~/.config/rclone
         cat /tmp/rclone_gdrive.conf >> ~/.config/rclone/rclone.conf
-        chmod 600 ~/.config/rclone/rclone.conf  # Bảo vệ token
+        chmod 600 ~/.config/rclone/rclone.conf
         rm /tmp/rclone_gdrive.conf
         echo -e "${GREEN}✅ Cấu hình Google Drive thành công!${NC}"
         return 0
     else
         echo -e "${RED}❌ Token không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.${NC}"
+        echo "   Lưu ý: Bạn phải copy TOÀN BỘ đoạn JSON (bao gồm cả dấu { }),"
+        echo "   và đảm bảo token vừa được tạo trong vòng 1 giờ."
         rm /tmp/rclone_gdrive.conf
         return 1
     fi
