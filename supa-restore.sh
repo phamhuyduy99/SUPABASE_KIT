@@ -48,7 +48,12 @@ else
                 echo -e "${YELLOW}Remote 'gdrive' chưa được cấu hình.${NC}"
                 read -p "Bạn có muốn cấu hình ngay không? (y/n): " setup_gdrive
                 if [ "$setup_gdrive" = "y" ]; then
-                    bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
+                    # Gọi script chuyên dụng thay vì rclone config thô
+                    if [ -f "$SCRIPT_DIR/supa-setup-gdrive.sh" ]; then
+                        bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
+                    else
+                        echo -e "${RED}Không tìm thấy script cấu hình Google Drive.${NC}"
+                    fi
                 fi
                 if ! rclone listremotes | grep -q "^gdrive:"; then
                     echo -e "${RED}Chưa cấu hình Google Drive. Vui lòng thử lại sau khi cấu hình.${NC}"

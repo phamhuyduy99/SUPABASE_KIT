@@ -201,8 +201,8 @@ ensure_rclone_gdrive() {
                 echo "   hoặc tự cài rclone theo hướng dẫn tại https://rclone.org/install/"
                 return 1
             fi
-            curl https://rclone.org/install.sh | sudo bash
-            # Kiểm tra lại sau khi cài
+            echo "📥 Đang tải và cài đặt rclone..."
+            curl -s https://rclone.org/install.sh | sudo bash >/dev/null 2>&1
             if ! command -v rclone &> /dev/null; then
                 echo -e "${RED}❌ Cài đặt rclone thất bại. Vui lòng thử lại hoặc cài thủ công.${NC}"
                 return 1
@@ -216,10 +216,17 @@ ensure_rclone_gdrive() {
 
     if ! rclone listremotes | grep -q "^gdrive:"; then
         echo -e "${YELLOW}Remote 'gdrive' chưa được cấu hình.${NC}"
-        echo "Tham khảo: https://rclone.org/drive/"
-        read -p "Chạy 'rclone config' ngay? (y/n): " config_rclone
-        if [ "$config_rclone" = "y" ]; then
-            rclone config
+        echo "   Để cấu hình, hãy chọn mục 6 (Cấu hình Google Drive) trong menu chính."
+        echo "   Hoặc bạn có thể cấu hình ngay bây giờ:"
+        read -p "   Bạn có muốn cấu hình Google Drive ngay không? (y/n): " setup_gdrive
+        if [ "$setup_gdrive" = "y" ]; then
+            # Gọi script setup chuyên dụng thay vì rclone config thô
+            if [ -f "$SCRIPT_DIR/supa-setup-gdrive.sh" ]; then
+                bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
+            else
+                echo -e "${RED}Không tìm thấy script cấu hình Google Drive.${NC}"
+                return 1
+            fi
         else
             return 1
         fi
