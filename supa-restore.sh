@@ -2,8 +2,7 @@
 # ==============================================
 # SUPA-RESTORE.SH – Khôi phục Supabase từ backup
 # -------------------------------------------------
-# Hỗ trợ VPS trắng: không cần cài Supabase trước.
-# Tự động cài Docker, tạo thư mục, khởi động và import.
+# Hỗ trợ VPS trắng, phát hiện dữ liệu backup kèm sẵn.
 # ==============================================
 
 set -e
@@ -15,30 +14,60 @@ echo "  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE"
 echo "======================================"
 
 # -------------------------------------------------
-# 1. Nhập file backup (local, URL, hoặc Google Drive)
+# 1. Kiểm tra backup_data đính kèm
 # -------------------------------------------------
-while true; do
-    read -p "Đường dẫn file backup (.tar.gz), URL, hoặc remote rclone: " SRC
-    if [[ "$SRC" =~ ^gdrive: ]]; then
-        if ! command -v rclone &> /dev/null; then
-            echo -e "${RED}rclone chưa cài đặt. Không thể tải từ Google Drive.${NC}"
-            exit 1
-        fi
-        LOCAL_FILE="/tmp/restore-backup.tar.gz"
-        download_from_gdrive "$SRC" "$LOCAL_FILE" || continue
-        BACKUP_FILE="$LOCAL_FILE"
-        break
-    elif [[ "$SRC" =~ ^https?:// ]]; then
-        echo "📥 Đang tải từ URL..."
-        wget -O /tmp/restore-backup.tar.gz "$SRC" && BACKUP_FILE="/tmp/restore-backup.tar.gz" && break
-        echo -e "${RED}Tải thất bại. Kiểm tra URL.${NC}"
-    else
-        if validate_backup_file "$SRC"; then
-            BACKUP_FILE="$SRC"
-            break
-        fi
+USE_EMBEDDED="n"
+if [ -d "$SCRIPT_DIR/backup_data" ]; then
+    echo -e "${YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
+    read -p "👉 Bạn có muốn dùng dữ liệu này để khôi phục luôn không? (y/n): " USE_EMBEDDED
+fi
+
+if [ "$USE_EMBEDDED" = "y" ]; then
+    echo "✅ Sử dụng dữ liệu backup có sẵn."
+    BACKUP_DIR="$SCRIPT_DIR/backup_data"
+    # Kiểm tra các thành phần cần thiết
+    if [ ! -f "$BACKUP_DIR/database/full_backup.sql.gz" ] || [ ! -f "$BACKUP_DIR/config/.env" ] || [ ! -f "$BACKUP_DIR/config/docker-compose.yml" ]; then
+        echo -e "${RED}❌ Dữ liệu backup không đầy đủ. Không thể tiếp tục.${NC}"
+        exit 1
     fi
-done
+else
+    # Flow nhập file backup như cũ
+    while true; do
+        read -p "Đường dẫn file backup (.tar.gz), URL, hoặc remote rclone: " SRC
+        if [[ "$SRC" =~ ^gdrive: ]]; then
+            if ! command -v rclone &> /dev/null; then
+                echo -e "${RED}rclone chưa cài đặt. Không thể tải từ Google Drive.${NC}"
+                exit 1
+            fi
+            LOCAL_FILE="/tmp/restore-backup.tar.gz"
+            download_from_gdrive "$SRC" "$LOCAL_FILE" || continue
+            BACKUP_FILE="$LOCAL_FILE"
+            break
+        elif [[ "$SRC" =~ ^https?:// ]]; then
+            echo "📥 Đang tải từ URL..."
+            wget -O /tmp/restore-backup.tar.gz "$SRC" && BACKUP_FILE="/tmp/restore-backup.tar.gz" && break
+            echo -e "${RED}Tải thất bại. Kiểm tra URL.${NC}"
+        else
+            if validate_backup_file "$SRC"; then
+                BACKUP_FILE="$SRC"
+                break
+            fi
+        fi
+    done
+
+    # Giải nén và tìm backup_data
+    TMP_DIR=$(mktemp -d)
+    echo "📦 Giải nén backup vào $TMP_DIR..."
+    tar xzf "$BACKUP_FILE" -C "$TMP_DIR" || { echo -e "${RED}Lỗi giải nén.${NC}"; exit 1; }
+    # Lấy thư mục con đầu tiên (tên thư mục gốc trong backup)
+    EXTRACTED_DIR=$(ls -1 "$TMP_DIR" | head -1)
+    BACKUP_DIR="$TMP_DIR/$EXTRACTED_DIR/backup_data"
+    if [ ! -d "$BACKUP_DIR" ]; then
+        echo -e "${RED}❌ File backup không chứa backup_data.${NC}"
+        rm -rf "$TMP_DIR"
+        exit 1
+    fi
+fi
 
 # -------------------------------------------------
 # 2. Nhập domain (tùy chọn)
@@ -51,7 +80,7 @@ if [ -n "$DOMAIN" ]; then
 fi
 
 # -------------------------------------------------
-# 3. Xác định thư mục cài đặt (KHÔNG cần .env sẵn)
+# 3. Xác định thư mục cài đặt
 # -------------------------------------------------
 read -p "Thư mục cài Supabase (mặc định /opt/supabase-restored): " TARGET_DIR
 TARGET_DIR="${TARGET_DIR:-/opt/supabase-restored}"
@@ -60,43 +89,32 @@ mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 
 # -------------------------------------------------
-# 4. Giải nén backup
+# 4. Copy cấu hình từ backup_data vào thư mục cài đặt
 # -------------------------------------------------
-echo "📦 Giải nén backup..."
-tar xzf "$BACKUP_FILE" -C "$TARGET_DIR" || { echo -e "${RED}Lỗi giải nén. File backup có thể bị hỏng.${NC}"; exit 1; }
-
-# -------------------------------------------------
-# 5. Copy cấu hình từ backup vào thư mục gốc
-# -------------------------------------------------
-if [ -f config/.env ] && [ -f config/docker-compose.yml ]; then
-    cp config/.env .
-    cp config/docker-compose.yml .
-    [ -d config/volumes ] && cp -r config/volumes .
-    echo "✅ Đã thiết lập cấu hình Supabase từ backup."
-else
-    echo -e "${RED}File backup thiếu .env hoặc docker-compose.yml. Không thể tiếp tục.${NC}"
-    exit 1
+echo "📋 Sao chép cấu hình..."
+cp "$BACKUP_DIR/config/.env" "$TARGET_DIR/"
+cp "$BACKUP_DIR/config/docker-compose.yml" "$TARGET_DIR/"
+if [ -f "$BACKUP_DIR/config/volumes.tar.gz" ]; then
+    tar xzf "$BACKUP_DIR/config/volumes.tar.gz" -C "$TARGET_DIR/"
 fi
 
 # -------------------------------------------------
-# 6. Cài Docker nếu chưa có
+# 5. Cài Docker nếu chưa có
 # -------------------------------------------------
 if ! command -v docker &> /dev/null; then
     echo "⚙️ Docker chưa được cài đặt."
-    require_sudo_or_exit   # Thoát nếu không có sudo và in hướng dẫn
+    require_sudo_or_exit
     wait_for_apt_lock || exit 1
     sudo apt update && sudo apt install -y docker.io docker-compose-v2
     sudo systemctl enable --now docker
-    # Sau khi cài, thêm user vào nhóm docker nếu cần
     if ! groups $REAL_USER | grep -q docker; then
-        echo -e "${YELLOW}⚠️ Lưu ý: Bạn cần thêm user '$REAL_USER' vào group docker để dùng Docker không cần sudo.${NC}"
-        echo "   Hãy chạy: sudo usermod -aG docker $REAL_USER"
-        echo "   Sau đó đăng xuất và đăng nhập lại."
+        echo -e "${YELLOW}⚠️ Thêm user '$REAL_USER' vào group docker để dùng không cần sudo.${NC}"
+        echo "   sudo usermod -aG docker $REAL_USER"
     fi
 fi
 
 # -------------------------------------------------
-# 7. Khởi động Supabase
+# 6. Khởi động Supabase
 # -------------------------------------------------
 echo "🚀 Khởi động Supabase..."
 docker compose up -d
@@ -104,66 +122,55 @@ echo "⏳ Chờ database sẵn sàng (30 giây)..."
 sleep 30
 
 # -------------------------------------------------
-# 8. Import database
+# 7. Import database
 # -------------------------------------------------
 DB_CONT=$(docker ps --format '{{.Names}}' | grep -E 'supabase.*db|db' | head -1)
 if [ -z "$DB_CONT" ]; then
-    echo -e "${RED}Không tìm thấy container database sau khi khởi động.${NC}"
+    echo -e "${RED}Không tìm thấy container database.${NC}"
     exit 1
 fi
 echo "🗄️ Import database..."
-gunzip -c database/full_backup.sql.gz > /tmp/restore.sql
+gunzip -c "$BACKUP_DIR/database/full_backup.sql.gz" > /tmp/restore.sql
 docker cp /tmp/restore.sql $DB_CONT:/tmp/
-docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql || {
-    echo -e "${RED}Có lỗi khi import database. Kiểm tra file backup.${NC}"
-    rm /tmp/restore.sql
-    exit 1
-}
+docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql || { rm /tmp/restore.sql; exit 1; }
 rm /tmp/restore.sql
-echo "✅ Database đã được phục hồi."
 
 # -------------------------------------------------
-# 9. Import storage
+# 8. Import storage
 # -------------------------------------------------
-if [ -f storage/storage.tar.gz ]; then
+if [ -f "$BACKUP_DIR/storage/storage.tar.gz" ]; then
     echo "📂 Import storage..."
     STORAGE_VOL=$(docker volume ls -q | grep _storage)
     if [ -n "$STORAGE_VOL" ]; then
-        docker run --rm -v $STORAGE_VOL:/mnt/storage -v "$TARGET_DIR/storage:/backup:ro" alpine \
+        docker run --rm -v $STORAGE_VOL:/mnt/storage -v "$BACKUP_DIR/storage:/backup:ro" alpine \
             sh -c "cd /mnt/storage && tar xzf /backup/storage.tar.gz"
     else
-        # Nếu dùng bind mount, thư mục volumes/storage đã được copy từ backup
-        [ -d volumes/storage ] && tar xzf storage/storage.tar.gz -C volumes/storage
+        [ -d volumes/storage ] && tar xzf "$BACKUP_DIR/storage/storage.tar.gz" -C volumes/storage
     fi
-    echo "✅ Storage đã được phục hồi."
+    echo "✅ Storage đã phục hồi."
 else
-    echo "ℹ️ Không có dữ liệu storage để phục hồi."
+    echo "ℹ️ Không có dữ liệu storage."
 fi
 
 # -------------------------------------------------
-# 10. Cài Nginx nếu có domain
+# 9. Cài Nginx nếu có domain (giữ nguyên logic)
 # -------------------------------------------------
 if [ -n "$DOMAIN" ]; then
     echo "🌐 Cài đặt Nginx và HTTPS..."
-    # Kiểm tra cổng (giữ nguyên logic cũ, có kiểm tra sudo và xung đột)
     PORT80=$(check_port 80)
     PORT443=$(check_port 443)
     if [[ "$PORT80" == DOCKER* ]] || [[ "$PORT443" == DOCKER* ]]; then
-        echo -e "${YELLOW}Phát hiện container Docker đang chiếm cổng 80/443.${NC}"
-        read -p "Dừng container để cài Nginx? (y/n): " stop_ans
+        echo -e "${YELLOW}Phát hiện container Docker chiếm cổng.${NC}"
+        read -p "Dừng để cài Nginx? (y/n): " stop_ans
         if [ "$stop_ans" = "y" ]; then
-            for cont in $(echo "$PORT80" "$PORT443" | grep -Po 'DOCKER\|\K[^|]+' | sort -u); do
-                docker stop $cont && docker rm $cont
-            done
+            for cont in $(echo "$PORT80" "$PORT443" | grep -Po 'DOCKER\|\K[^|]+' | sort -u); do docker stop $cont && docker rm $cont; done
         else
-            echo "Bỏ qua cài Nginx."
+            echo "Bỏ qua Nginx."
         fi
     elif [[ "$PORT80" != "FREE" ]] || [[ "$PORT443" != "FREE" ]]; then
-        echo -e "${RED}Cổng 80/443 đã bị chiếm bởi tiến trình hệ thống, không thể cài Nginx.${NC}"
+        echo -e "${RED}Cổng 80/443 bị chiếm.${NC}"
     else
-        # Cài Nginx nếu cần
-        local need_nginx=0
-        local need_certbot=0
+        local need_nginx=0; local need_certbot=0
         command -v nginx &> /dev/null || need_nginx=1
         command -v certbot &> /dev/null || need_certbot=1
         if [ $need_nginx -eq 1 ] || [ $need_certbot -eq 1 ]; then
@@ -173,15 +180,9 @@ if [ -n "$DOMAIN" ]; then
             [ $need_nginx -eq 1 ] && sudo apt install -y nginx
             [ $need_certbot -eq 1 ] && sudo apt install -y certbot python3-certbot-nginx
         fi
-
         if check_nginx_domain_conflict "$DOMAIN"; then
-            echo -e "${YELLOW}Domain $DOMAIN đã có trong cấu hình Nginx.${NC}"
-            read -p "Ghi đè? (y/n): " overwrite
-            if [ "$overwrite" = "y" ]; then
-                for f in $(grep -rl "server_name $DOMAIN" /etc/nginx/sites-enabled/); do sudo rm "$f"; done
-            else
-                echo "Bỏ qua Nginx."
-            fi
+            read -p "Domain $DOMAIN đã tồn tại, ghi đè? (y/n): " overwrite
+            [ "$overwrite" = "y" ] && for f in $(grep -rl "server_name $DOMAIN" /etc/nginx/sites-enabled/); do sudo rm "$f"; done
         fi
         if [ "$overwrite" != "n" ]; then
             sudo tee /etc/nginx/sites-available/supabase > /dev/null <<EOF
@@ -210,17 +211,15 @@ server {
 EOF
             sudo ln -sf /etc/nginx/sites-available/supabase /etc/nginx/sites-enabled/
             sudo nginx -t && sudo systemctl reload nginx
-            sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m "admin@$DOMAIN" || echo "Certbot gặp lỗi, hãy kiểm tra lại domain."
+            sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m "admin@$DOMAIN" || echo "Certbot lỗi."
         fi
     fi
 fi
 
 # -------------------------------------------------
-# 11. Khởi động lại toàn bộ và hiển thị thông tin
+# 10. Khởi động lại và hiển thị thông tin
 # -------------------------------------------------
-echo "🔄 Khởi động lại Supabase lần cuối..."
 docker compose restart
-
 IP=$(hostname -I | awk '{print $1}')
 echo -e "${GREEN}=============================================${NC}"
 echo -e "${GREEN}  🎉 KHÔI PHỤC HOÀN TẤT!${NC}"
@@ -233,7 +232,11 @@ if [ -f .env ]; then
     PASS=$(grep -E '^DASHBOARD_PASSWORD=' .env | cut -d '=' -f2)
     echo "👤 Tên đăng nhập: ${USERNAME:-Chưa có}"
     echo "🔑 Mật khẩu: ${PASS:-Chưa có}"
-else
-    echo "Không tìm thấy file .env, hãy kiểm tra thông tin đăng nhập."
 fi
 echo -e "${GREEN}=============================================${NC}"
+
+# Dọn dẹp thư mục tạm nếu dùng file backup ngoài
+# Chỉ xóa khi TMP_DIR được tạo ra (USE_EMBEDDED != "y") và an toàn (nằm trong /tmp)
+if [ "$USE_EMBEDDED" != "y" ] && [ -n "$TMP_DIR" ] && [[ "$TMP_DIR" == /tmp/* ]]; then
+    rm -rf "$TMP_DIR"
+fi

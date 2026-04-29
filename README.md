@@ -33,25 +33,30 @@ II. CÀI ĐẶT & CHẠY LẦN ĐẦU (CHỈ MỘT LỆNH)
 
 III. CÁC CHỨC NĂNG TRONG MENU
 - [1] Đóng băng hệ thống (Backup): Tạo file sao lưu toàn bộ dữ liệu và
-      cấu hình Supabase. Có thể tự động đồng bộ sang VPS dự phòng hoặc
-      upload lên Google Drive (nếu đã cấu hình rclone).
-      File backup có đuôi .tar.gz, chứa mọi thứ cần thiết để khôi phục.
+      cấu hình Supabase. File backup tạo ra là một GÓI TỰ HÀNH: giải nén
+      ra là bạn có ngay bộ kit kèm dữ liệu, sẵn sàng khôi phục trên VPS khác.
 - [2] Khôi phục hệ thống (Restore): Dựng lại toàn bộ Supabase (cấu hình,
-      database, storage, edge functions) từ file backup lên bất kỳ VPS nào,
-      kể cả VPS trắng chưa cài đặt gì. Bạn chỉ cần chỉ định thư mục cài đặt,
-      script sẽ tự lo phần còn lại (cài Docker, khởi động, import dữ liệu).
+      database, storage, edge functions) từ file backup. Khi chạy từ bộ kit
+      có sẵn backup_data, script sẽ hỏi bạn có muốn dùng dữ liệu đó không.
+      Chọn 'y' và nhập thư mục cài đặt là xong – không cần chỉ định file.
 - [3] Cài HTTPS & domain: Cài Nginx và chứng chỉ SSL miễn phí cho
-      tên miền của bạn. Script sẽ kiểm tra xung đột cổng, domain
-      và hướng dẫn xử lý.
+      tên miền của bạn.
 - [4] Kiểm tra trạng thái: Xem các container Supabase có đang chạy không.
 - [5] Thiết lập tự động backup: Hẹn giờ backup hàng ngày lúc 2h sáng.
 - [6] Cấu hình Google Drive: Thiết lập kết nối để upload backup lên Google Drive.
 - [0] Thoát.
 
-   Lưu ý: Khi khởi động, màn hình sẽ hiển thị rõ chức năng nào đã sẵn sàng,
-   chức năng nào cần cài thêm (và cần sudo hay không).
+IV. SỬ DỤNG GÓI BACKUP TỰ HÀNH
+   Khi bạn tải file backup .tar.gz (từ Google Drive, VPS khác...), hãy:
+   1. Giải nén: tar xzf ten-file.tar.gz
+   2. Di chuyển vào thư mục vừa tạo: cd ten-thu-muc
+   3. Chạy: sudo bash supa-start.sh
+   4. Vào menu, chọn [2] Khôi phục hệ thống.
+   5. Khi được hỏi "Bạn có muốn dùng dữ liệu backup kèm sẵn không?", chọn 'y'.
+   6. Nhập thư mục cài đặt (Enter để dùng mặc định) và domain (nếu có).
+   7. Chờ quá trình hoàn tất – bạn sẽ có một hệ thống Supabase sống động!
 
-IV. SỬ DỤNG FILE BACKUP TỪ GOOGLE DRIVE ĐỂ KHÔI PHỤC
+V. SỬ DỤNG FILE BACKUP TỪ GOOGLE DRIVE ĐỂ KHÔI PHỤC
    Sau khi backup lên Google Drive, bạn có thể tải file đó về bất kỳ VPS nào
    để khôi phục. Có hai cách:
    Cách 1 (tự động): Trong menu Restore, nhập đường dẫn theo cú pháp:
@@ -60,7 +65,7 @@ IV. SỬ DỤNG FILE BACKUP TỪ GOOGLE DRIVE ĐỂ KHÔI PHỤC
    Cách 2 (thủ công): Vào Google Drive trên trình duyệt, tải file .tar.gz
       về máy tính, rồi upload lên VPS mới. Sau đó trong Restore nhập đường dẫn file.
 
-V. CÁC TÌNH HUỐNG THƯỜNG GẶP
+VI. CÁC TÌNH HUỐNG THƯỜNG GẶP
 1. "Không tìm thấy file .env":
    Bạn cần nhập đường dẫn đến thư mục chứa Supabase.
 2. "Không có quyền sudo":

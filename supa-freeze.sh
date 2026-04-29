@@ -1,12 +1,15 @@
 #!/bin/bash
 # ==============================================
-# SUPA-FREEZE.SH – Sao lưu toàn bộ Supabase
+# SUPA-FREEZE.SH – Sao lưu toàn bộ Supabase + bộ kit
 # -------------------------------------------------
+# Tạo file backup .tar.gz chứa:
+#   - Toàn bộ script của bộ kit (tự chạy sau giải nén)
+#   - Dữ liệu backup (database, storage, cấu hình) trong backup_data/
 # Tích hợp upload Google Drive nếu cần,
 # kiểm tra dung lượng ổ đĩa trước khi backup,
 # xử lý trường hợp thiếu sudo khi cần cài rsync.
 # Bỏ qua thư mục db/data khi backup volumes để tránh lỗi permission.
-# tự động hướng dẫn thiết lập SSH key cho đồng bộ.
+# Tự động hướng dẫn thiết lập SSH key cho đồng bộ.
 # ==============================================
 
 # KHÔNG dùng set -e để tránh script dừng đột ngột khi có lỗi nhỏ
@@ -105,52 +108,58 @@ else
 fi
 
 # ------------------------------------------------------------
-# 4. Chuẩn bị thư mục tạm và đặt tên file backup
+# 4. Chuẩn bị thư mục gốc cho backup (sẽ trở thành bộ kit)
 # ------------------------------------------------------------
-BACKUP_FILE="$PROJECT_DIR/supabase-backup-$(date +%Y%m%d_%H%M%S).tar.gz"
-TMP=$(mktemp -d)
-mkdir -p $TMP/{config,database,storage,scripts}
-echo "📁 Bắt đầu sao lưu..."
+PACK_NAME="supabase-backup-$(date +%Y%m%d_%H%M%S)"
+BACKUP_FILE="$PROJECT_DIR/${PACK_NAME}.tar.gz"
+TMP_ROOT=$(mktemp -d)
+PACK_DIR="$TMP_ROOT/$PACK_NAME"
+mkdir -p "$PACK_DIR/backup_data"/{config,database,storage}
+
+echo "📁 Chuẩn bị gói backup tự hành: $PACK_NAME"
 
 # ------------------------------------------------------------
-# 5. Sao lưu cấu hình (bỏ qua thư mục db/data để tránh lỗi permission)
+# 5. Copy toàn bộ script của kit vào gốc gói backup
+# ------------------------------------------------------------
+cp "$SCRIPT_DIR"/supa-*.sh "$PACK_DIR/" 2>/dev/null
+cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/" 2>/dev/null
+[ -f "$SCRIPT_DIR/README.txt" ] && cp "$SCRIPT_DIR/README.txt" "$PACK_DIR/"
+
+# ------------------------------------------------------------
+# 6. Sao lưu cấu hình (bỏ qua db/data để tránh lỗi permission)
 # ------------------------------------------------------------
 echo "1/4 Sao lưu cấu hình..."
-cp "$PROJECT_DIR/.env" "$TMP/config/" || { echo -e "${RED}❌ Không thể copy .env. Kiểm tra quyền đọc.${NC}"; exit 1; }
-cp "$PROJECT_DIR/docker-compose.yml" "$TMP/config/"
+cp "$PROJECT_DIR/.env" "$PACK_DIR/backup_data/config/" || { echo -e "${RED}❌ Không thể copy .env.${NC}"; exit 1; }
+cp "$PROJECT_DIR/docker-compose.yml" "$PACK_DIR/backup_data/config/"
 if [ -d "$PROJECT_DIR/volumes" ]; then
-    # Nén volumes nhưng LOẠI TRỪ thư mục dữ liệu database vật lý (đã được dump riêng)
-    # Sử dụng tar để tránh lỗi Permission denied với các file thuộc quyền postgres
-    tar czf "$TMP/config/volumes.tar.gz" -C "$PROJECT_DIR" volumes --exclude='volumes/db/data' --warning=no-file-changed 2>/dev/null || echo -e "${YELLOW}⚠️ Không thể sao lưu một số file cấu hình volumes (có thể thiếu quyền đọc). Bỏ qua.${NC}"
-    mkdir -p "$TMP/config/volumes"
-    tar xzf "$TMP/config/volumes.tar.gz" -C "$TMP/config/" 2>/dev/null || true
-    rm -f "$TMP/config/volumes.tar.gz"
+    # Nén riêng thư mục volumes (trừ db/data) để tránh lỗi permission
+    tar czf "$PACK_DIR/backup_data/config/volumes.tar.gz" -C "$PROJECT_DIR" volumes --exclude='volumes/db/data' --warning=no-file-changed 2>/dev/null || echo -e "${YELLOW}⚠️ Không thể sao lưu một số file cấu hình volumes. Bỏ qua.${NC}"
 fi
 
 # ------------------------------------------------------------
-# 6. Sao lưu database
+# 7. Sao lưu database
 # ------------------------------------------------------------
 echo "2/4 Sao lưu database..."
-if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$TMP/database/full_backup.sql.gz"; then
+if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$PACK_DIR/backup_data/database/full_backup.sql.gz"; then
     echo "   -> Database đã được dump thành công."
 else
-    echo -e "${RED}❌ Có lỗi khi dump database. Kiểm tra kết nối.${NC}"
-    rm -rf "$TMP"
+    echo -e "${RED}❌ Có lỗi khi dump database.${NC}"
+    rm -rf "$TMP_ROOT"
     exit 1
 fi
 
 # ------------------------------------------------------------
-# 7. Sao lưu storage
+# 8. Sao lưu storage
 # ------------------------------------------------------------
 echo "3/4 Sao lưu storage..."
 STORAGE_VOL=$(docker volume ls -q | grep _storage)
 if [ -n "$STORAGE_VOL" ]; then
-    docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v $TMP/storage:/backup alpine \
+    docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v "$PACK_DIR/backup_data/storage:/backup" alpine \
         sh -c "cd /mnt/storage && tar czf /backup/storage.tar.gz ."
     echo "   -> Storage (Docker volume) đã được backup."
 else
     if [ -d "$PROJECT_DIR/volumes/storage" ]; then
-        tar czf "$TMP/storage/storage.tar.gz" -C "$PROJECT_DIR/volumes/storage" .
+        tar czf "$PACK_DIR/backup_data/storage/storage.tar.gz" -C "$PROJECT_DIR/volumes/storage" .
         echo "   -> Storage (bind mount) đã được backup."
     else
         echo -e "${YELLOW}⚠️ Không tìm thấy volume hoặc thư mục storage. Bỏ qua.${NC}"
@@ -158,18 +167,12 @@ else
 fi
 
 # ------------------------------------------------------------
-# 8. Tự copy script kit vào backup
-# ------------------------------------------------------------
-cp "$SCRIPT_DIR"/supa-*.sh "$TMP/scripts/" 2>/dev/null
-cp "$SCRIPT_DIR"/common.sh "$TMP/scripts/" 2>/dev/null
-[ -f "$SCRIPT_DIR/README.txt" ] && cp "$SCRIPT_DIR/README.txt" "$TMP/scripts/"
-
-# ------------------------------------------------------------
-# 9. Đóng gói
+# 9. Nén toàn bộ thư mục PACK_NAME thành file .tar.gz
 # ------------------------------------------------------------
 echo "4/4 Đóng gói..."
-tar czf "$BACKUP_FILE" -C "$TMP" .
-rm -rf "$TMP"
+cd "$TMP_ROOT"
+tar czf "$BACKUP_FILE" "$PACK_NAME"
+rm -rf "$TMP_ROOT"
 echo -e "${GREEN}✅ Backup thành công: $BACKUP_FILE${NC}"
 
 # ------------------------------------------------------------
