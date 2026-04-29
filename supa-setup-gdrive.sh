@@ -4,7 +4,8 @@
 # -------------------------------------------------
 # Hỗ trợ kiểm tra kết nối hiện tại, làm mới token
 # nếu đã tồn tại remote nhưng không hoạt động.
-# Hướng dẫn copy token chi tiết, tránh nhầm lẫn.
+# CHO PHÉP ĐỔI TÀI KHOẢN: nếu remote đã có, hỏi người dùng
+# có muốn cấu hình lại (ghi đè) không.
 # ==============================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,36 +16,64 @@ echo "  🔧 CẤU HÌNH GOOGLE DRIVE (RCLONE)"
 echo "======================================"
 echo ""
 echo "Quá trình này cần bạn có một tài khoản Google và một máy tính có trình duyệt web."
-echo "Bạn chỉ cần làm MỘT LẦN duy nhất."
+echo "Bạn có thể thay đổi tài khoản bất cứ lúc nào bằng cách chạy lại chức năng này."
 echo ""
 
-# Kiểm tra rclone đã cài chưa
+# Kiểm tra rclone đã cài chưa (nếu chưa sẽ được cài tự động nếu có sudo)
 if ! command -v rclone &> /dev/null; then
-    echo -e "${YELLOW}rclone chưa cài đặt. Đang tiến hành cài...${NC}"
     ensure_rclone_gdrive || exit 1
 fi
 
-# Kiểm tra xem remote gdrive đã tồn tại chưa
+# ------------------------------------------------------------
+# KIỂM TRA REMOTE GDRIVE ĐÃ TỒN TẠI CHƯA
+# ------------------------------------------------------------
+RECONFIGURE="n"
 if rclone listremotes | grep -q "^gdrive:"; then
+    echo -e "${GREEN}✅ Remote 'gdrive' hiện đã được cấu hình.${NC}"
+    echo ""
+    # Kiểm tra kết nối hiện tại
     if check_gdrive_connection; then
-        echo -e "${GREEN}✅ Remote 'gdrive' đã được cấu hình và hoạt động tốt.${NC}"
-        exit 0
+        echo -e "${GREEN}   Kết nối hiện tại đang hoạt động tốt.${NC}"
     else
-        echo -e "${YELLOW}⚠️ Remote 'gdrive' đã tồn tại nhưng không kết nối được. Có thể token đã hết hạn.${NC}"
-        read -p "Bạn có muốn chạy 'rclone config reconnect gdrive:' để làm mới token không? (y/n): " reconnect_choice
-        if [ "$reconnect_choice" = "y" ]; then
+        echo -e "${YELLOW}   Kết nối hiện tại không hoạt động (có thể token hết hạn).${NC}"
+    fi
+    echo ""
+    echo "Bạn có muốn:"
+    echo "  1. Giữ nguyên cấu hình hiện tại"
+    echo "  2. Làm mới token (nếu kết nối hỏng)"
+    echo "  3. Đổi sang tài khoản Google Drive khác (cấu hình lại từ đầu)"
+    read -p "👉 Nhập lựa chọn (1/2/3): " reconfigure_choice
+
+    case $reconfigure_choice in
+        2)
+            echo "🔄 Đang làm mới token..."
             rclone config reconnect gdrive:
             if check_gdrive_connection; then
                 echo -e "${GREEN}✅ Token đã được làm mới thành công.${NC}"
                 exit 0
             else
-                echo -e "${RED}❌ Vẫn không thành công. Bạn có thể cần cấu hình lại từ đầu.${NC}"
+                echo -e "${RED}❌ Làm mới thất bại. Bạn có thể cần cấu hình lại từ đầu (chọn 3).${NC}"
+                exit 1
             fi
-        fi
-    fi
+            ;;
+        3)
+            RECONFIGURE="y"
+            echo "🔧 Sẽ xóa cấu hình cũ và tạo mới..."
+            # Xóa remote gdrive khỏi config
+            rclone config delete gdrive --non-interactive 2>/dev/null || true
+            # Xóa cả section trong file config nếu còn sót
+            sed -i '/^\[gdrive\]/,/^$/d' ~/.config/rclone/rclone.conf 2>/dev/null || true
+            ;;
+        *)
+            echo "Giữ nguyên cấu hình hiện tại."
+            exit 0
+            ;;
+    esac
 fi
 
-# Nếu chưa, bắt đầu cấu hình mới
+# ------------------------------------------------------------
+# BẮT ĐẦU CẤU HÌNH MỚI
+# ------------------------------------------------------------
 echo "📌 Bây giờ chúng ta sẽ tạo kết nối đến Google Drive."
 echo ""
 echo "1. Trên máy tính cá nhân của bạn (Windows/Mac/Linux), hãy tải rclone từ:"
@@ -107,6 +136,9 @@ while true; do
         fi
     fi
 done
+
+# Đảm bảo thư mục supabase-backups tồn tại trên Drive mới
+rclone mkdir gdrive:supabase-backups 2>/dev/null || true
 
 echo ""
 echo "🎉 Từ bây giờ bạn có thể chọn upload backup lên Google Drive khi Đóng băng hệ thống."
