@@ -40,7 +40,7 @@ else
                 echo -e "${YELLOW}rclone chưa cài đặt. Đang thử cài đặt...${NC}"
                 if ! ensure_rclone_gdrive; then
                     echo -e "${RED}Không thể cài rclone. Vui lòng cài thủ công hoặc chọn nguồn backup khác.${NC}"
-                    continue  # quay lại hỏi nguồn backup
+                    continue
                 fi
             fi
             # Kiểm tra remote gdrive đã có chưa, nếu chưa thì gợi ý cấu hình
@@ -61,6 +61,8 @@ else
                 fi
             fi
             LOCAL_FILE="/tmp/restore-backup.tar.gz"
+            # Xóa sạch đích nếu đã tồn tại (tránh lỗi "Is a directory")
+            rm -rf "$LOCAL_FILE"
             download_from_gdrive "$SRC" "$LOCAL_FILE" || continue
             BACKUP_FILE="$LOCAL_FILE"
             break
