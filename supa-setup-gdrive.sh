@@ -4,6 +4,7 @@
 # -------------------------------------------------
 # Hỗ trợ kiểm tra kết nối hiện tại, làm mới token
 # nếu đã tồn tại remote nhưng không hoạt động.
+# Hướng dẫn copy token chi tiết, tránh nhầm lẫn.
 # ==============================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +26,6 @@ fi
 
 # Kiểm tra xem remote gdrive đã tồn tại chưa
 if rclone listremotes | grep -q "^gdrive:"; then
-    # Kiểm tra xem kết nối có thực sự hoạt động không
     if check_gdrive_connection; then
         echo -e "${GREEN}✅ Remote 'gdrive' đã được cấu hình và hoạt động tốt.${NC}"
         exit 0
@@ -44,7 +44,7 @@ if rclone listremotes | grep -q "^gdrive:"; then
     fi
 fi
 
-# Nếu chưa, bắt đầu cấu hình tự động
+# Nếu chưa, bắt đầu cấu hình mới
 echo "📌 Bây giờ chúng ta sẽ tạo kết nối đến Google Drive."
 echo ""
 echo "1. Trên máy tính cá nhân của bạn (Windows/Mac/Linux), hãy tải rclone từ:"
@@ -55,21 +55,21 @@ echo "2. Chạy lệnh sau trên máy cá nhân:"
 echo "   rclone authorize \"drive\""
 echo ""
 echo "   Trình duyệt sẽ mở ra, yêu cầu bạn đăng nhập Google và cấp quyền."
-echo "   Sau khi cho phép, terminal sẽ hiện ra một đoạn code dài (JSON)."
-echo "   Hãy COPY TOÀN BỘ đoạn code đó (từ dấu { đến dấu })."
+echo "   Sau khi cho phép, terminal sẽ hiện ra một đoạn JSON (bắt đầu bằng dấu { )."
+echo "   Hãy COPY TOÀN BỘ đoạn JSON đó, BAO GỒM CẢ DẤU NGOẶC NHỌN { }."
+echo "   Ví dụ: {\"access_token\":\"...\",\"token_type\":\"Bearer\",\"refresh_token\":\"...\",\"expiry\":\"...\"}"
 echo ""
-echo "3. Quay lại đây và DÁN đoạn code vào khi được yêu cầu."
+echo "3. Quay lại đây và DÁN TOÀN BỘ đoạn JSON vào khi được yêu cầu, sau đó nhấn Enter."
 echo ""
 
 # Hàm tạo remote từ token người dùng cung cấp
 configure_gdrive_with_token() {
-    read -p "👉 Dán token của bạn vào đây: " token
+    read -p "👉 Dán đoạn JSON token của bạn vào đây: " token
     if [ -z "$token" ]; then
         echo -e "${RED}Token không được để trống.${NC}"
         return 1
     fi
 
-    # Tạo file cấu hình rclone tạm thời
     cat > /tmp/rclone_gdrive.conf <<EOF
 [gdrive]
 type = drive
@@ -77,9 +77,9 @@ scope = drive
 token = $token
 EOF
 
-    # Kiểm tra xem remote hoạt động không
+    # Thông báo rõ ràng trước khi xác thực
+    echo -e "\n🔍 Đang xác thực token với Google Drive. Vui lòng đợi trong giây lát..."
     if rclone --config /tmp/rclone_gdrive.conf lsd gdrive: >/dev/null 2>&1; then
-        # Gộp vào file cấu hình chính
         mkdir -p ~/.config/rclone
         cat /tmp/rclone_gdrive.conf >> ~/.config/rclone/rclone.conf
         rm /tmp/rclone_gdrive.conf
@@ -107,3 +107,6 @@ done
 
 echo ""
 echo "🎉 Từ bây giờ bạn có thể chọn upload backup lên Google Drive khi Đóng băng hệ thống."
+echo "   File backup sẽ được lưu trong thư mục 'supabase-backups' trên Google Drive của bạn."
+echo "   Để khôi phục từ file đó, hãy dùng chức năng Restore trong menu và nhập:"
+echo "   gdrive:supabase-backups/tên-file-backup.tar.gz"

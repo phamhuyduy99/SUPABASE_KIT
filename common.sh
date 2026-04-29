@@ -171,6 +171,8 @@ auto_chmod_sh() {
 # ============================================================
 # CÁC HÀM LIÊN QUAN RCLONE (Google Drive)
 # ============================================================
+
+# Đảm bảo rclone đã cài và remote gdrive đã được cấu hình
 ensure_rclone_gdrive() {
     if ! command -v rclone &> /dev/null; then
         echo -e "${YELLOW}rclone chưa cài đặt. Cần để upload lên Google Drive.${NC}"
@@ -199,7 +201,7 @@ ensure_rclone_gdrive() {
     return 0
 }
 
-# HÀM MỚI: Kiểm tra kết nối Google Drive còn hoạt động không (có thông báo trạng thái)
+# Kiểm tra kết nối Google Drive – có hiển thị trạng thái ra terminal
 check_gdrive_connection() {
     echo -n "🔍 Đang kiểm tra kết nối Google Drive..."
     if rclone about gdrive: >/dev/null 2>&1; then
@@ -212,7 +214,7 @@ check_gdrive_connection() {
     fi
 }
 
-# HÀM MỚI: Gợi ý làm mới token Google Drive
+# Gợi ý làm mới token nếu kết nối thất bại
 suggest_gdrive_reconnect() {
     echo ""
     echo -e "${YELLOW}📌 Để làm mới token Google Drive, bạn có thể chạy:${NC}"
@@ -233,7 +235,7 @@ suggest_gdrive_reconnect() {
     fi
 }
 
-# Hàm upload có thông báo chuẩn bị và kiểm tra kết nối
+# Upload file lên Google Drive – kèm thông báo chi tiết từng bước và hướng dẫn sử dụng
 upload_to_gdrive() {
     local file=$1
     local folder=${2:-supabase-backups}
@@ -252,6 +254,12 @@ upload_to_gdrive() {
         echo -e "${GREEN}✅ Đã upload thành công!${NC}"
         echo -e "   📂 File: $file"
         echo -e "   ☁️  Vị trí: Google Drive > $folder > $(basename "$file")"
+        echo -e "   📌 Để khôi phục hệ thống từ file này trên bất kỳ VPS nào:"
+        echo -e "      1. Đảm bảo đã cấu hình Google Drive (chọn mục 6 trong menu)."
+        echo -e "      2. Chọn mục 2 (Restore) và khi được hỏi đường dẫn file backup, nhập:"
+        echo -e "         gdrive:supabase-backups/$(basename "$file")"
+        echo -e "      3. Script sẽ tự động tải file từ Google Drive về và khôi phục."
+        echo -e "   💡 Nếu bạn muốn tải về máy cá nhân, vào Google Drive, vào thư mục 'supabase-backups' và tải xuống."
     } || {
         echo -e "${RED}Có lỗi khi upload. Kiểm tra kết nối và dung lượng Drive.${NC}"
         if ! check_gdrive_connection; then
@@ -261,7 +269,7 @@ upload_to_gdrive() {
     }
 }
 
-# Hàm download có kiểm tra kết nối và đề xuất reconnect nếu lỗi
+# Tải file từ Google Drive – kèm thông báo chi tiết
 download_from_gdrive() {
     local remote_path=$1
     local local_path=$2

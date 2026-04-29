@@ -35,9 +35,11 @@ III. CÁC CHỨC NĂNG TRONG MENU
 - [1] Đóng băng hệ thống (Backup): Tạo file sao lưu toàn bộ dữ liệu và
       cấu hình Supabase. Có thể tự động đồng bộ sang VPS dự phòng hoặc
       upload lên Google Drive (nếu đã cấu hình rclone).
-- [2] Khôi phục hệ thống (Restore): Dựng lại Supabase từ file backup
-      (có thể tải từ URL hoặc Google Drive). Hiển thị địa chỉ Studio
-      và thông tin đăng nhập khi hoàn tất.
+      File backup có đuôi .tar.gz, chứa mọi thứ cần thiết để khôi phục.
+- [2] Khôi phục hệ thống (Restore): Dựng lại toàn bộ Supabase (cấu hình,
+      database, storage, edge functions) từ file backup lên bất kỳ VPS nào,
+      kể cả VPS trắng chưa cài đặt gì. Bạn chỉ cần chỉ định thư mục cài đặt,
+      script sẽ tự lo phần còn lại (cài Docker, khởi động, import dữ liệu).
 - [3] Cài HTTPS & domain: Cài Nginx và chứng chỉ SSL miễn phí cho
       tên miền của bạn. Script sẽ kiểm tra xung đột cổng, domain
       và hướng dẫn xử lý.
@@ -49,7 +51,16 @@ III. CÁC CHỨC NĂNG TRONG MENU
    Lưu ý: Khi khởi động, màn hình sẽ hiển thị rõ chức năng nào đã sẵn sàng,
    chức năng nào cần cài thêm (và cần sudo hay không).
 
-IV. CÁC TÌNH HUỐNG THƯỜNG GẶP
+IV. SỬ DỤNG FILE BACKUP TỪ GOOGLE DRIVE ĐỂ KHÔI PHỤC
+   Sau khi backup lên Google Drive, bạn có thể tải file đó về bất kỳ VPS nào
+   để khôi phục. Có hai cách:
+   Cách 1 (tự động): Trong menu Restore, nhập đường dẫn theo cú pháp:
+      gdrive:supabase-backups/tên-file.tar.gz
+   Script sẽ tự động tải file từ Google Drive về và tiến hành khôi phục.
+   Cách 2 (thủ công): Vào Google Drive trên trình duyệt, tải file .tar.gz
+      về máy tính, rồi upload lên VPS mới. Sau đó trong Restore nhập đường dẫn file.
+
+V. CÁC TÌNH HUỐNG THƯỜNG GẶP
 1. "Không tìm thấy file .env":
    Bạn cần nhập đường dẫn đến thư mục chứa Supabase.
 2. "Không có quyền sudo":
@@ -62,9 +73,6 @@ IV. CÁC TÌNH HUỐNG THƯỜNG GẶP
    Hệ thống đang bận, script sẽ tự động chờ tối đa 5 phút.
 6. Token Google Drive hết hạn:
    Script sẽ đề xuất chạy 'rclone config reconnect gdrive:' để làm mới.
-
-V. CẤU HÌNH GOOGLE DRIVE (TÙY CHỌN)
-   ... (giữ nguyên)
 
 VI. THÔNG TIN LIÊN HỆ HỖ TRỢ
    Nếu gặp khó khăn, hãy liên hệ người đã cung cấp bộ kit này.
