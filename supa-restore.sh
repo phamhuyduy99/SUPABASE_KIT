@@ -55,6 +55,16 @@ else
         fi
     done
 
+    # Kiểm tra sha256 nếu có
+    if [ -f "${BACKUP_FILE}.sha256" ]; then
+        echo "🔍 Đang kiểm tra tính toàn vẹn file backup..."
+        if ! sha256sum -c "${BACKUP_FILE}.sha256" --quiet 2>/dev/null; then
+            echo -e "${RED}❌ File backup bị hỏng hoặc không toàn vẹn!${NC}"
+            exit 1
+        fi
+        echo "✅ File backup hợp lệ."
+    fi
+
     # Giải nén và tìm backup_data
     TMP_DIR=$(mktemp -d)
     echo "📦 Giải nén backup vào $TMP_DIR..."
@@ -126,17 +136,30 @@ fi
 # -------------------------------------------------
 echo "🚀 Khởi động Supabase..."
 docker compose up -d
-echo "⏳ Chờ database sẵn sàng (30 giây)..."
-sleep 30
+echo "⏳ Chờ database sẵn sàng..."
+
+# Poll database status
+DB_CONT=""
+for i in {1..30}; do
+    DB_CONT=$(docker ps --format '{{.Names}}' | grep -E 'supabase.*db|db' | head -1)
+    if [ -n "$DB_CONT" ]; then
+        if docker exec $DB_CONT pg_isready -U postgres &>/dev/null; then
+            echo "✅ Database đã sẵn sàng."
+            break
+        fi
+    fi
+    echo -n "."; sleep 2
+done
+echo ""
+
+if [ -z "$DB_CONT" ]; then
+    echo -e "${RED}Không tìm thấy container database sau khi khởi động.${NC}"
+    exit 1
+fi
 
 # -------------------------------------------------
 # 7. Import database
 # -------------------------------------------------
-DB_CONT=$(docker ps --format '{{.Names}}' | grep -E 'supabase.*db|db' | head -1)
-if [ -z "$DB_CONT" ]; then
-    echo -e "${RED}Không tìm thấy container database.${NC}"
-    exit 1
-fi
 echo "🗄️ Import database..."
 gunzip -c "$BACKUP_DIR/database/full_backup.sql.gz" > /tmp/restore.sql
 docker cp /tmp/restore.sql $DB_CONT:/tmp/
@@ -178,7 +201,7 @@ if [ -n "$DOMAIN" ]; then
     elif [[ "$PORT80" != "FREE" ]] || [[ "$PORT443" != "FREE" ]]; then
         echo -e "${RED}Cổng 80/443 bị chiếm.${NC}"
     else
-        local need_nginx=0; local need_certbot=0
+        need_nginx=0; need_certbot=0
         command -v nginx &> /dev/null || need_nginx=1
         command -v certbot &> /dev/null || need_certbot=1
         if [ $need_nginx -eq 1 ] || [ $need_certbot -eq 1 ]; then
@@ -227,7 +250,7 @@ fi
 # -------------------------------------------------
 # 10. Khởi động lại và hiển thị thông tin
 # -------------------------------------------------
-docker compose restart
+$DOCKER_COMPOSE_CMD restart
 IP=$(hostname -I | awk '{print $1}')
 echo -e "${GREEN}=============================================${NC}"
 echo -e "${GREEN}  🎉 KHÔI PHỤC HOÀN TẤT!${NC}"
@@ -237,9 +260,8 @@ if [ -f .env ]; then
     [ -n "$DOMAIN" ] && STUDIO_URL="https://${DOMAIN}"
     echo "🌐 Studio URL: $STUDIO_URL"
     USERNAME=$(grep -E '^DASHBOARD_USERNAME=' .env | cut -d '=' -f2)
-    PASS=$(grep -E '^DASHBOARD_PASSWORD=' .env | cut -d '=' -f2)
     echo "👤 Tên đăng nhập: ${USERNAME:-Chưa có}"
-    echo "🔑 Mật khẩu: ${PASS:-Chưa có}"
+    echo "🔑 Mật khẩu: (xem trong file $TARGET_DIR/.env, biến DASHBOARD_PASSWORD)"
 fi
 echo -e "${GREEN}=============================================${NC}"
 

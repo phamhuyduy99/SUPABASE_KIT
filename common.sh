@@ -24,6 +24,20 @@ else
     REAL_USER="$(whoami)"         # Nếu không, dùng whoami
 fi
 
+# ---------- PHÁT HIỆN DOCKER COMPOSE ----------
+detect_docker_compose() {
+    if docker compose version &>/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    elif command -v docker-compose &>/dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        echo -e "${RED}❌ Không tìm thấy docker compose. Vui lòng cài đặt Docker.${NC}"
+        exit 1
+    fi
+}
+detect_docker_compose
+export DOCKER_COMPOSE_CMD
+
 # ============================================================
 # HÀM YÊU CẦU QUYỀN SUDO HOẶC THOÁT (kèm hướng dẫn)
 # ============================================================

@@ -82,6 +82,7 @@ EOF
     if rclone --config /tmp/rclone_gdrive.conf lsd gdrive: >/dev/null 2>&1; then
         mkdir -p ~/.config/rclone
         cat /tmp/rclone_gdrive.conf >> ~/.config/rclone/rclone.conf
+        chmod 600 ~/.config/rclone/rclone.conf  # Bảo vệ token
         rm /tmp/rclone_gdrive.conf
         echo -e "${GREEN}✅ Cấu hình Google Drive thành công!${NC}"
         return 0

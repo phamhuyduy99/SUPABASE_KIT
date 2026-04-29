@@ -1,3 +1,4 @@
+supa-menu.sh
 #!/bin/bash
 # ==============================================
 # SUPA-MENU.SH – Giao diện menu chính
@@ -29,6 +30,15 @@ ensure_project_dir() {
             PROJECT_DIR=$(input_supabase_dir)
         fi
     fi
+}
+
+# Hàm thiết lập backup tự động
+setup_auto_backup() {
+    SCRIPT_PATH="$SCRIPT_DIR/supa-freeze.sh"
+    CRON_LINE="0 2 * * * bash $SCRIPT_PATH --cron $PROJECT_DIR >> /var/log/supabase-backup.log 2>&1"
+    (crontab -l 2>/dev/null; echo "$CRON_LINE") | sort -u | crontab -
+    echo -e "${GREEN}✅ Đã thiết lập backup tự động lúc 2h sáng mỗi ngày.${NC}"
+    echo "📋 Xem log tại: /var/log/supabase-backup.log"
 }
 
 # Quét và hiển thị trạng thái các chức năng trước khi vào menu (không cần PROJECT_DIR)
@@ -77,7 +87,7 @@ while true; do
         5)
             # Cài cron backup cũng cần thư mục dự án
             ensure_project_dir
-            bash supa-freeze.sh --cron "$PROJECT_DIR"
+            setup_auto_backup
             ;;
         6)
             bash supa-setup-gdrive.sh

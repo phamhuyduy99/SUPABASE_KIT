@@ -18,6 +18,16 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
+# ---------- MÀU SẮC ----------
+# Định nghĩa màu nếu chưa có từ common.sh để đảm bảo hiển thị đúng
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
 # Xác định PROJECT_DIR: ưu tiên tham số, sau đó tự dò, cuối cùng hỏi người dùng
 if [ -n "$1" ] && [ "$1" != "--cron" ]; then
     PROJECT_DIR="$1"
@@ -113,10 +123,14 @@ fi
 PACK_NAME="supabase-backup-$(date +%Y%m%d_%H%M%S)"
 BACKUP_FILE="$PROJECT_DIR/${PACK_NAME}.tar.gz"
 TMP_ROOT=$(mktemp -d)
-PACK_DIR="$TMP_ROOT/$PACK_NAME"
-mkdir -p "$PACK_DIR/backup_data"/{config,database,storage}
 
-echo "📁 Chuẩn bị gói backup tự hành: $PACK_NAME"
+# Thêm trap cleanup để dọn dẹp thư mục tạm khi thoát hoặc bị ngắt
+trap 'echo -e "${YELLOW}🧹 Dọn dẹp thư mục tạm...${NC}"; rm -rf "$TMP_ROOT"' EXIT INT TERM
+
+PACK_DIR="$TMP_ROOT/$PACK_NAME"
+mkdir -p "$PACK_DIR/backup_data"/{config,database,storage,volumes}
+
+echo -e "📁 Chuẩn bị gói backup tự hành: ${MAGENTA}$PACK_NAME${NC}"
 
 # ------------------------------------------------------------
 # 5. Copy toàn bộ script của kit vào gốc gói backup
@@ -154,16 +168,18 @@ else
 fi
 
 # ------------------------------------------------------------
-# 7. Sao lưu database
+# 7. Sao lưu database (thêm pipefail để bắt lỗi trong pipeline)
 # ------------------------------------------------------------
 echo -e "${BOLD}2/4 Sao lưu database...${NC}"
+set -o pipefail
 if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$PACK_DIR/backup_data/database/full_backup.sql.gz"; then
-    echo "   -> Database đã được dump thành công."
+    echo -e "   -> Database đã được dump thành công."
 else
-    echo -e "${RED}❌ Có lỗi khi dump database.${NC}"
-    rm -rf "$TMP_ROOT"
+    echo -e "${RED}❌ Có lỗi khi dump database (kiểm tra kết nối hoặc dung lượng).${NC}"
+    # Trap sẽ xử lý việc xóa TMP_ROOT, nhưng exit ngay để tránh các bước sau
     exit 1
 fi
+set +o pipefail
 
 # ------------------------------------------------------------
 # 8. Sao lưu storage
@@ -210,9 +226,9 @@ if [ -n "$REMOTE" ]; then
     fi
     
     # Kiểm tra kết nối SSH (thử lệnh đơn giản)
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${REMOTE}" 'echo "OK"' >/dev/null 2>&1; then
+    if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "${REMOTE}" 'echo "OK"' >/dev/null 2>&1; then
         # Tạo thư mục backups trên remote nếu chưa có
-        ssh -o StrictHostKeyChecking=no "${REMOTE}" 'mkdir -p ~/backups' 2>/dev/null
+        ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'mkdir -p ~/backups' 2>/dev/null
     else
         echo -e "${YELLOW}⚠️ Không thể kết nối SSH tới $REMOTE.${NC}"
         echo "   Lỗi thường gặp:"
@@ -223,7 +239,7 @@ if [ -n "$REMOTE" ]; then
     fi
     
     # Thực hiện rsync
-    rsync -avz -e "ssh -o StrictHostKeyChecking=no" "$BACKUP_FILE" "${REMOTE}:~/backups/" && {
+    rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:~/backups/" && {
         echo -e "${GREEN}✅ Đồng bộ thành công tới ${REMOTE}:~/backups/$(basename "$BACKUP_FILE")${NC}"
         } || {
         echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
@@ -250,8 +266,20 @@ if [[ "$1" != "--cron" ]]; then
     read -p "⏰ Bạn có muốn tự động backup hàng ngày lúc 2h sáng? (y/n): " ans
     if [ "$ans" = "y" ]; then
         SCRIPT_PATH="$SCRIPT_DIR/supa-freeze.sh"
+        # Đảm bảo đường dẫn tuyệt đối cho cron
+        if [[ "$SCRIPT_PATH" != /* ]]; then
+            SCRIPT_PATH="$(cd "$SCRIPT_DIR" && pwd)/supa-freeze.sh"
+        fi
         CRON_LINE="0 2 * * * $SCRIPT_PATH --cron $PROJECT_DIR"
         (crontab -l 2>/dev/null; echo "$CRON_LINE") | sort -u | crontab -
         echo -e "${GREEN}✅ Cron job đã được thêm. Hệ thống sẽ tự động backup lúc 2h sáng mỗi ngày.${NC}"
     fi
+fi
+
+# ------------------------------------------------------------
+# 13. Sinh checksum
+# ------------------------------------------------------------
+if [ -f "$BACKUP_FILE" ]; then
+    sha256sum "$BACKUP_FILE" > "${BACKUP_FILE}.sha256"
+    echo -e "📋 Checksum đã được tạo: ${BACKUP_FILE}.sha256"
 fi
