@@ -35,9 +35,10 @@ III. CÁC CHỨC NĂNG TRONG MENU
 - [1] Đóng băng hệ thống (Backup): Tạo file sao lưu toàn bộ dữ liệu và
       cấu hình Supabase. Có thể tự động đồng bộ sang VPS dự phòng hoặc
       upload lên Google Drive (nếu đã cấu hình rclone).
-- [2] Khôi phục hệ thống (Restore): Dựng lại Supabase từ file backup
-      (có thể tải từ URL hoặc Google Drive). Hiển thị địa chỉ Studio
-      và thông tin đăng nhập khi hoàn tất.
+- [2] Khôi phục hệ thống (Restore): Dựng lại toàn bộ Supabase (cấu hình,
+      database, storage, edge functions) từ file backup lên bất kỳ VPS nào,
+      kể cả VPS trắng chưa cài đặt gì. Bạn chỉ cần chỉ định thư mục cài đặt,
+      script sẽ tự lo phần còn lại (cài Docker, khởi động, import dữ liệu).
 - [3] Cài HTTPS & domain: Cài Nginx và chứng chỉ SSL miễn phí cho
       tên miền của bạn. Script sẽ kiểm tra xung đột cổng, domain
       và hướng dẫn xử lý.

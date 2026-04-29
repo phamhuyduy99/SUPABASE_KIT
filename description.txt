@@ -1,0 +1,106 @@
+Tôi sẽ giúp bạn xây dựng một **Bộ Kit Supabase Self-Hosted Hoàn Thiện Nhất**, đầy đủ mọi tính năng xử lý lỗi, kiểm tra đầu vào, tự động phát hiện và giải quyết xung đột. Bạn chỉ cần sao chép các file này vào một thư mục, giải thích cho khách hàng theo file `README.txt`, và họ có thể vận hành mà không cần biết kỹ thuật sâu.
+
+---
+
+## 📁 Danh sách file trong bộ kit
+
+```
+supabase-kit/
+├── menu.sh
+├── common.sh
+├── freeze.sh
+├── restore.sh
+├── setup-nginx.sh
+├── status.sh
+└── README.txt
+```
+
+Mỗi file đều có chức năng riêng, được thiết kế để chạy độc lập hoặc thông qua menu. Tất cả đều được viết bằng Bash, tự động phát hiện môi trường, xác thực dữ liệu nhập, và xử lý lỗi rõ ràng.
+
+---
+
+## ✨ Mô tả chi tiết từng file
+
+### 1. `menu.sh` – Giao diện chính
+
+- **Tự động cấp quyền thực thi** cho tất cả các file `.sh` trong cùng thư mục.
+- **Kiểm tra quyền sudo** và cảnh báo nếu thiếu.
+- Gọi các script con tương ứng khi người dùng chọn số.
+- Menu thân thiện, có màu sắc, hỗ trợ tiếng Việt.
+
+### 2. `common.sh` – Thư viện hàm dùng chung
+
+File này được các script khác `source` để sử dụng các hàm xác thực:
+
+- `validate_domain()`: kiểm tra domain hợp lệ (có dấu chấm, không ký tự lạ).
+- `validate_supabase_dir()`: kiểm tra thư mục chứa `.env` và `docker-compose.yml`.
+- `input_supabase_dir()`: yêu cầu nhập lại cho đến khi hợp lệ.
+- `validate_backup_file()`: kiểm tra file backup có tồn tại và đúng định dạng `tar.gz`.
+- `check_port()`: phát hiện tiến trình nào đang chiếm cổng (hỗ trợ phân biệt Docker hay host).
+- `check_nginx_conflict()`: kiểm tra xung đột domain trong các file Nginx hiện có.
+- `offer_overwrite()`: hỏi người dùng có ghi đè file cấu hình cũ không.
+
+Tất cả các hàm đều trả về mã lỗi rõ ràng và in ra thông báo tiếng Việt.
+
+### 3. `freeze.sh` – Sao lưu hệ thống
+
+- Tự động xác định thư mục dự án (hỏi nếu không tìm thấy `.env`).
+- Kiểm tra container database có đang chạy không.
+- Backup database bằng `pg_dumpall` (role + schema + data), nén gzip.
+- Backup storage (dùng Docker volume hoặc bind mount), nén thành `storage.tar.gz`.
+- Tự sao lưu toàn bộ script kit vào gói backup.
+- Cho phép đồng bộ sang VPS dự phòng qua `rsync` (hỏi user@IP).
+- Sau khi backup, hỏi người dùng có muốn cài cron tự động backup hàng ngày không (trừ khi chạy với cờ `--cron` để tránh hỏi lại).
+- Xử lý lỗi: nếu không tìm thấy container DB, thiếu quyền ghi, v.v. sẽ dừng và báo lỗi.
+
+### 4. `restore.sh` – Khôi phục hệ thống
+
+- Nhận đường dẫn file backup hoặc URL (hỗ trợ tải về từ web).
+- Kiểm tra file backup tồn tại và hợp lệ.
+- Tự động xác định thư mục cài đặt (hỏi nếu không tìm hoặc muốn đổi).
+- Cài đặt Docker nếu chưa có.
+- Giải nén backup, khởi động Supabase, import database, import storage.
+- Nếu có domain, gọi logic cài Nginx tương tự `setup-nginx.sh` nhưng tích hợp sẵn, có kiểm tra xung đột.
+- Hiển thị thông tin đăng nhập Studio (URL, username, password từ `.env`) khi hoàn tất.
+- Xử lý lỗi: file backup không đúng định dạng, thiếu file `.env`, không có container DB, v.v.
+
+### 5. `setup-nginx.sh` – Cài đặt HTTPS cho domain
+
+- Nhập domain và kiểm tra hợp lệ.
+- Tự động phát hiện xung đột cổng 80/443 (Docker container hoặc tiến trình host).
+- Nếu có container Docker chiếm cổng, hỏi người dùng có muốn dừng container đó để cài Nginx mới không.
+- Kiểm tra xem domain đã tồn tại trong file cấu hình Nginx nào chưa, cảnh báo và cho phép ghi đè hoặc vô hiệu hóa.
+- Tạo file cấu hình Nginx tối ưu (tương tự mẫu bạn đưa nhưng được tự động điền domain).
+- Chạy Certbot để xin chứng chỉ SSL.
+- Xử lý lỗi: domain không hợp lệ, không thể cài Nginx do xung đột không giải quyết được, certbot lỗi.
+
+### 6. `status.sh` – Kiểm tra trạng thái container
+
+- Hiển thị danh sách container đang chạy với tên, trạng thái, cổng.
+
+### 7. `README.txt` – Hướng dẫn sử dụng siêu chi tiết
+
+Tài liệu tiếng Việt, từng bước, từ upload, cấp quyền, chọn chức năng, giải thích mọi thông báo, cách khắc phục lỗi thường gặp.
+
+---
+
+## 🚀 Cách đóng gói và bàn giao cho khách hàng
+
+1. **Tạo một thư mục** tên `supabase-kit`.
+2. **Sao chép toàn bộ 7 file** trên vào thư mục đó.
+3. **Nén lại** thành file `supabase-kit.zip`.
+4. **Gửi cho khách hàng** kèm lời nhắn: "Giải nén, upload lên VPS, mở terminal trong thư mục đó và chạy `sudo ./menu.sh`".
+
+Họ sẽ không cần cài đặt gì khác. Mọi thứ sẽ tự động.
+
+---
+
+## 📋 Tổng kết những gì bộ kit đã đạt được
+
+- **Thân thiện người mới:** Giao diện menu, thông báo tiếng Việt, hỏi đáp rõ ràng.
+- **An toàn:** Kiểm tra mọi đầu vào, không ghi đè dữ liệu nếu chưa hỏi, sao lưu file cấu hình cũ.
+- **Thông minh:** Tự nhận diện thư mục dự án, tự cài Docker, tự xử lý xung đột Nginx/Docker.
+- **Toàn diện:** Backup, restore, cài HTTPS, kiểm tra trạng thái, tự động backup định kỳ.
+- **Đóng gói gọn nhẹ:** Chỉ vài file script, không cần cài đặt phụ thuộc.
+
+Bạn hoàn toàn có thể yên tâm giao bộ kit này cho bất kỳ ai, kể cả người chưa từng dùng Linux. Nếu cần tôi bổ sung thêm tính năng nào (ví dụ: backup lên Google Drive, gửi email thông báo...), hãy cho tôi biết nhé!
