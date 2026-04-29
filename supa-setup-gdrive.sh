@@ -47,14 +47,7 @@ if rclone listremotes | grep -q "^gdrive:"; then
     case $reconfigure_choice in
         2)
             echo "🔄 Đang làm mới token..."
-            rclone config reconnect gdrive:
-            if check_gdrive_connection; then
-                echo -e "${GREEN}✅ Token đã được làm mới thành công.${NC}"
-                exit 0
-            else
-                echo -e "${RED}❌ Làm mới thất bại. Bạn có thể cần cấu hình lại từ đầu (chọn 3).${NC}"
-                exit 1
-            fi
+            suggest_gdrive_reconnect && exit 0 || exit 1
             ;;
         3)
             RECONFIGURE="y"

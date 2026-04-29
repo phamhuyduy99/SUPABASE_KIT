@@ -249,23 +249,62 @@ check_gdrive_connection() {
 }
 
 # Gợi ý làm mới token nếu kết nối thất bại
+# KHÔNG dùng rclone config reconnect (yêu cầu trình duyệt trên VPS)
+# Thay vào đó, hướng dẫn tạo token trên máy cá nhân và tự cập nhật
 suggest_gdrive_reconnect() {
     echo ""
-    echo -e "${YELLOW}📌 Để làm mới token Google Drive, bạn có thể chạy:${NC}"
-    echo "   rclone config reconnect gdrive:"
+    echo -e "${YELLOW}📌 Token Google Drive đã hết hạn hoặc không hợp lệ.${NC}"
+    echo "   Để làm mới, bạn cần thực hiện các bước sau:"
     echo ""
-    echo "   Nếu chưa có client_id riêng (khuyên dùng để token không bị hết hạn),"
-    echo "   hãy làm theo hướng dẫn tại: https://rclone.org/drive/#making-your-own-client-id"
-    echo "   Sau đó chạy lại: rclone config"
+    echo "   1. Trên máy tính cá nhân (Windows/Mac/Linux), mở terminal và chạy:"
+    echo "      rclone authorize \"drive\""
+    echo "      (Nếu chưa cài rclone, tải từ https://rclone.org/downloads/)"
     echo ""
-    read -p "Bạn có muốn chạy 'rclone config reconnect gdrive:' ngay bây giờ không? (y/n): " do_reconnect
-    if [ "$do_reconnect" = "y" ]; then
-        rclone config reconnect gdrive:
-        if check_gdrive_connection; then
-            echo -e "${GREEN}✅ Kết nối Google Drive đã được khôi phục.${NC}"
-        else
-            echo -e "${RED}❌ Vẫn không thể kết nối. Vui lòng chạy 'rclone config' để cấu hình lại từ đầu.${NC}"
-        fi
+    echo "   2. Trình duyệt sẽ mở ra, yêu cầu bạn đăng nhập Google và cấp quyền."
+    echo "      Sau khi cho phép, terminal sẽ hiển thị một đoạn JSON."
+    echo "      Hãy COPY TOÀN BỘ đoạn JSON đó (bao gồm cả dấu { })."
+    echo ""
+    echo "   3. Quay lại đây và DÁN đoạn JSON vào khi được yêu cầu."
+    echo ""
+    read -p "👉 Bạn có muốn cập nhật token ngay bây giờ không? (y/n): " do_update
+    if [ "$do_update" != "y" ]; then
+        echo "Hủy bỏ. Bạn có thể chạy lại sau."
+        return 1
+    fi
+
+    # Nhận token mới từ người dùng
+    read -p "👉 Dán đoạn JSON token mới của bạn vào đây: " token
+    if [ -z "$token" ]; then
+        echo -e "${RED}Token không được để trống.${NC}"
+        return 1
+    fi
+
+    # Cập nhật token trong file cấu hình rclone
+    local config_file="$HOME/.config/rclone/rclone.conf"
+    if [ ! -f "$config_file" ]; then
+        echo -e "${RED}❌ Không tìm thấy file cấu hình rclone.${NC}"
+        return 1
+    fi
+
+    # Tạo file tạm thay thế section [gdrive] bằng token mới
+    local tmp_conf="/tmp/rclone_renew_$$.conf"
+    awk -v new_token="token = $token" '
+        /^\[gdrive\]/ { in_gdrive=1; print; next }
+        in_gdrive && /^\[/ { in_gdrive=0 }
+        in_gdrive && /^token / { print new_token; next }
+        { print }
+    ' "$config_file" > "$tmp_conf"
+
+    # Kiểm tra xem file mới có hoạt động không
+    if rclone --config "$tmp_conf" about gdrive: >/dev/null 2>&1; then
+        mv "$tmp_conf" "$config_file"
+        chmod 600 "$config_file"
+        echo -e "${GREEN}✅ Token đã được cập nhật thành công!${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Token mới không hợp lệ. Vui lòng thử lại.${NC}"
+        rm -f "$tmp_conf"
+        return 1
     fi
 }
 

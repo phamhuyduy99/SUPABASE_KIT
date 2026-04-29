@@ -63,7 +63,20 @@ else
             LOCAL_FILE="/tmp/restore-backup.tar.gz"
             # Xóa sạch đích nếu đã tồn tại (tránh lỗi "Is a directory")
             rm -rf "$LOCAL_FILE"
-            download_from_gdrive "$SRC" "$LOCAL_FILE" || continue
+            # Thử tải, nếu lỗi thì gợi ý làm mới token và thử lại
+            if ! download_from_gdrive "$SRC" "$LOCAL_FILE"; then
+                # Gợi ý làm mới token
+                if suggest_gdrive_reconnect; then
+                    echo "🔄 Token đã được cập nhật, đang thử tải lại..."
+                    rm -rf "$LOCAL_FILE"
+                    if download_from_gdrive "$SRC" "$LOCAL_FILE"; then
+                        BACKUP_FILE="$LOCAL_FILE"
+                        break
+                    fi
+                fi
+                echo -e "${RED}❌ Không thể tải file từ Google Drive. Vui lòng thử lại.${NC}"
+                continue
+            fi
             BACKUP_FILE="$LOCAL_FILE"
             break
         elif [[ "$SRC" =~ ^https?:// ]]; then
