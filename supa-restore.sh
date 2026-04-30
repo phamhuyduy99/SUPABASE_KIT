@@ -411,34 +411,45 @@ else
     fi
 fi
 
-# Nếu vẫn chưa khởi động được, hỏi người dùng có muốn tiếp tục không
+# -------------------------------------------------
+# Xử lý khi Supabase không khởi động được
+# -------------------------------------------------
 if [ $SUPABASE_STARTED -eq 0 ]; then
     echo ""
-    echo -e "${YELLOW}Bạn có thể tiếp tục khôi phục database và storage sau khi tự khởi động Supabase thủ công.${NC}"
-    read -p "Bạn có muốn tiếp tục các bước còn lại (import database, storage) không? (y/n): " continue_restore
+    echo -e "${YELLOW}Không thể khởi động Supabase, nhưng bạn vẫn có thể phục hồi dữ liệu nếu container database đang chạy.${NC}"
+    echo "Bạn có 2 lựa chọn:"
+    echo "1. Tự khởi động Supabase thủ công, sau đó chạy lại script này để import database & storage."
+    echo "2. Tiếp tục import database & storage NGAY BÂY GIỜ (chỉ hiệu quả nếu container database đang chạy)."
+    read -p "👉 Bạn muốn tiếp tục import database & storage không? (y/n): " continue_restore
     if [ "$continue_restore" != "y" ]; then
-        echo "Đã hủy quá trình khôi phục. Bạn có thể chạy lại script sau khi khắc phục lỗi khởi động."
+        echo "Đã hủy. Bạn có thể chạy lại script sau khi khắc phục lỗi khởi động."
         exit 0
     fi
 fi
-echo "⏳ Chờ database sẵn sàng..."
 
-# Poll database status
+# -------------------------------------------------
+# Kiểm tra container database (nếu có)
+# -------------------------------------------------
+echo "⏳ Đang kiểm tra container database..."
 DB_CONT=""
-for i in {1..30}; do
-    DB_CONT=$(docker ps --format '{{.Names}}' | grep -E 'supabase.*db|db' | head -1)
+for i in {1..10}; do
+    DB_CONT=$(docker ps --format '.Names' | grep -E 'supabase.*db|db' | head -1)
     if [ -n "$DB_CONT" ]; then
         if docker exec $DB_CONT pg_isready -U postgres &>/dev/null; then
             echo "✅ Database đã sẵn sàng."
             break
         fi
     fi
-    echo -n "."; sleep 2
+    echo -n "."; sleep 3
 done
 echo ""
 
 if [ -z "$DB_CONT" ]; then
-    echo -e "${RED}Không tìm thấy container database sau khi khởi động.${NC}"
+    echo -e "${RED}❌ Không tìm thấy container database đang chạy.${NC}"
+    echo "   Bạn cần khởi động Supabase trước khi import dữ liệu."
+    echo "   Hãy thử chạy lệnh sau:"
+    echo "   cd $TARGET_DIR && sudo $DOCKER_COMPOSE_CMD -f docker-compose.yml up -d"
+    echo "   Sau đó chạy lại script này để import database & storage."
     exit 1
 fi
 
