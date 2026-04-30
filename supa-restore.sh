@@ -197,20 +197,22 @@ fi
 
 echo "   ✅ Xác nhận docker-compose.yml đã sẵn sàng."
 
-# Đảm bảo tương thích LXC/OpenVZ: thêm privileged mode cho các service cần sysctl
+# Đảm bảo tương thích với môi trường ảo hóa LXC/OpenVZ:
+# Thêm security_opt và cap_add cho các service cố gắng đặt sysctl
 echo "🔧 Đang tối ưu cấu hình cho môi trường ảo hóa..."
 SERVICES_TO_FIX="vector imgproxy db"
 for svc in $SERVICES_TO_FIX; do
     if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
-        # Kiểm tra xem service đã có privileged: true chưa
-        if ! awk -v svc="$svc" '$0 ~ "^  " svc ":" {found=1} found && /privileged: true/ {exit 1}' "$TARGET_DIR/docker-compose.yml"; then
-            # Thêm dòng privileged: true vào sau dòng 'image:' của service
-            sudo sed -i "/^  ${svc}:/,/^  [a-z]/{/^    image:/a\    privileged: true
+        # Kiểm tra xem đã có seccomp:unconfined chưa, nếu chưa thì thêm
+        if ! grep -A10 "^  ${svc}:" "$TARGET_DIR/docker-compose.yml" | grep -q "seccomp:unconfined"; then
+            # Thêm security_opt và cap_add vào sau dòng 'image:' của service
+            sudo sed -i "/^  ${svc}:/,/^  [a-z]/{/^    image:/a\    security_opt:\n      - seccomp:unconfined\n    cap_add:\n      - SYS_ADMIN
             }" "$TARGET_DIR/docker-compose.yml"
-            echo "   ✅ Đã thêm privileged: true cho service '$svc'"
+            echo "   ✅ Đã thêm security_opt và cap_add cho service '$svc'"
         fi
     fi
 done
+echo "   ✅ Hoàn tất tối ưu cấu hình."
 
 # ------------------------------------------------------------
 # CHUẨN BỊ MÔI TRƯỜNG SẠCH TRƯỚC KHI KHỞI ĐỘNG (CÓ HỎI)
