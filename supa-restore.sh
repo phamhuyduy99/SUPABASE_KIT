@@ -35,7 +35,7 @@ if [ "$USE_EMBEDDED" = "y" ]; then
 else
     # Flow nhập file backup như cũ
     while true; do
-        read -p "Đường dẫn file backup (.tar.gz), URL, hoặc remote rclone: " SRC
+        read -p "Đường dẫn file backup (.tar.gz), URL, hoặc ,remote rclone: " SRC
         if [[ "$SRC" =~ ^gdrive: ]]; then
             # Đảm bảo rclone đã cài và có remote gdrive
             if ! command -v rclone &> /dev/null; then
@@ -197,6 +197,64 @@ fi
 
 echo "   ✅ Xác nhận docker-compose.yml đã sẵn sàng."
 
+# ------------------------------------------------------------
+# CHUẨN BỊ MÔI TRƯỜNG SẠCH TRƯỚC KHI KHỞI ĐỘNG (CÓ HỎI)
+# ------------------------------------------------------------
+echo "🧹 Đang kiểm tra container Supabase cũ..."
+
+# 1. Kiểm tra container trong dự án hiện tại (dùng compose file)
+if $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" ps -q 2>/dev/null | grep -q .; then
+    echo -e "${YELLOW}⚠️ Phát hiện container Supabase đang chạy từ thư mục $TARGET_DIR.${NC}"
+    read -p "👉 Bạn có muốn dừng và xóa chúng để khôi phục mới không? (y/n): " confirm_clean
+    if [ "$confirm_clean" = "y" ]; then
+        $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
+        echo "✅ Đã dọn dẹp container cũ trong dự án này."
+    else
+        echo "❌ Hủy bỏ. Bạn có thể tự xử lý container cũ rồi chạy lại."
+        exit 0
+    fi
+fi
+
+# 2. Kiểm tra container cũ (tên chứa "supabase" nhưng không thuộc compose trên)
+ORPHAN_CONTAINERS=$(docker ps -a --filter "name=supabase" -q 2>/dev/null)
+if [ -n "$ORPHAN_CONTAINERS" ]; then
+    echo -e "${YELLOW}⚠️ Tìm thấy các container Supabase cũ (từ lần khôi phục trước).${NC}"
+    echo "   Danh sách container sắp bị xóa:"
+    docker ps -a --filter "name=supabase" --format "{{.Names}}\t{{.Status}}" 2>/dev/null
+    read -p "👉 Bạn có muốn xóa các container này không? (y/n): " confirm_orphan
+    if [ "$confirm_orphan" = "y" ]; then
+        docker rm -f $ORPHAN_CONTAINERS 2>/dev/null || true
+        echo "✅ Đã xóa container cũ."
+    else
+        echo "ℹ️ Giữ nguyên container cũ."
+    fi
+fi
+
+# 3. Quét và sửa sysctl (chỉ sửa file, không đụng chạm gì khác)
+echo "🔍 Đang quét toàn bộ cấu hình để tìm sysctl không tương thích..."
+SYSCTL_FILES=$(grep -rl "ip_unprivileged_port_start" "$TARGET_DIR" 2>/dev/null || true)
+if [ -n "$SYSCTL_FILES" ]; then
+    for f in $SYSCTL_FILES; do
+        echo "   🔧 Đang sửa file: $f"
+        if sudo sed -i '/ip_unprivileged_port_start/d' "$f" 2>/dev/null; then
+            echo "   ✅ Đã xóa dòng sysctl khỏi $f"
+        else
+            echo -e "${YELLOW}   ⚠️ Không thể tự động sửa file $f (thiếu quyền sudo?).${NC}"
+            echo "   👉 Bạn hãy tự mở file: sudo nano $f"
+            echo "      Tìm và xóa dòng chứa 'ip_unprivileged_port_start', lưu lại và thoát."
+            read -p "   Nhấn Enter sau khi đã sửa xong (hoặc nhập 'skip' để bỏ qua): " user_choice
+            if [ "$user_choice" = "skip" ]; then
+                echo "   ⏭️ Bỏ qua file này."
+            fi
+        fi
+    done
+else
+    echo "   ✅ Không tìm thấy dòng sysctl trong bất kỳ file cấu hình nào."
+fi
+
+# Không bao giờ tự ý restart Docker hay xóa image. 
+# Nếu thực sự cần, script sẽ hướng dẫn người dùng tự làm ở bước xử lý lỗi.
+
 # Phục hồi volumes (ưu tiên thư mục, sau đó mới đến file nén)
 if [ -d "$BACKUP_DIR/volumes" ] && [ "$(ls -A "$BACKUP_DIR/volumes" 2>/dev/null)" ]; then
     echo "📂 Phục hồi thư mục volumes..."
@@ -208,6 +266,24 @@ elif [ -f "$BACKUP_DIR/config/volumes.tar.gz" ]; then
 else
     echo -e "${YELLOW}⚠️ Không tìm thấy dữ liệu volumes trong backup.${NC}"
 fi
+
+# ---------- HÀM THỬ KHỞI ĐỘNG (sửa lỗi mất log) ----------
+LAST_DOCKER_ERR=""
+
+try_start() {
+    local err_log="/tmp/docker_start_err_$$.log"
+    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d 2>"$err_log"
+    local ec=$?
+    if [ $ec -ne 0 ]; then
+        LAST_DOCKER_ERR=$(< "$err_log")
+        cat "$err_log"
+        rm -f "$err_log"
+        return 1
+    fi
+    rm -f "$err_log"
+    LAST_DOCKER_ERR=""
+    return 0
+}
 
 # -------------------------------------------------
 # 5. Cài Docker nếu chưa có
@@ -239,20 +315,6 @@ if ! check_disk_space 500 "$TARGET_DIR"; then
     exit 1
 fi
 
-# Hàm thử khởi động (chạy ngầm, capture lỗi)
-try_start() {
-    local err_log="/tmp/docker_start_err_$$.log"
-    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d 2>"$err_log"
-    local ec=$?
-    if [ $ec -ne 0 ]; then
-        cat "$err_log"
-        rm -f "$err_log"
-        return 1
-    fi
-    rm -f "$err_log"
-    return 0
-}
-
 # ---------- LẦN 1 ----------
 SUPABASE_STARTED=0
 if try_start; then
@@ -261,75 +323,87 @@ if try_start; then
 else
     echo -e "${YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
 
-    # Biến lưu lỗi
-    DOCKER_ERR=$(try_start 2>&1) || true
+    # ----- XỬ LÝ LỖI SYSCTL (mới: sử dụng privileged mode) -----
+    if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
+        echo "   🔍 Phát hiện lỗi sysctl cứng đầu."
+        echo "   🧹 Đang dừng mọi container liên quan đến Supabase..."
+        $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
+        docker ps -a --filter "name=supabase" -q | xargs -r docker rm -f 2>/dev/null || true
 
-    # ----- XỬ LÝ LỖI SYSCTL -----
-    if echo "$DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
-        echo "   🔍 Phát hiện lỗi sysctl (ip_unprivileged_port_start)."
-        # Kiểm tra xem file có thực sự chứa dòng đó không
-        if grep -q "ip_unprivileged_port_start" "$TARGET_DIR/docker-compose.yml"; then
-            echo "   🔧 Đang tự động xóa mọi dòng chứa 'ip_unprivileged_port_start' khỏi docker-compose.yml..."
-            sudo sed -i '/ip_unprivileged_port_start/d' "$TARGET_DIR/docker-compose.yml"
-            # Xác nhận đã xóa thành công
-            if grep -q "ip_unprivileged_port_start" "$TARGET_DIR/docker-compose.yml"; then
-                echo -e "${RED}   ❌ Không thể tự động sửa file docker-compose.yml.${NC}"
-                echo "   Bạn vui lòng tự mở file và xóa dòng có chứa 'ip_unprivileged_port_start'."
-                echo "   File: $TARGET_DIR/docker-compose.yml"
-                echo "   Dòng cần xóa thường nằm trong service 'vector' hoặc 'imgproxy'."
-            else
-                echo "   ✅ Đã xóa thành công dòng sysctl không tương thích."
+        # Biện pháp tương thích: thêm privileged: true vào các service thường gặp lỗi sysctl
+        echo "   🔧 Đang áp dụng biện pháp tương thích (privileged mode) cho vector, imgproxy, db..."
+        SERVICES_TO_FIX="vector imgproxy db"
+        for svc in $SERVICES_TO_FIX; do
+            # Kiểm tra xem service đó có tồn tại trong compose file không
+            if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
+                # Kiểm tra xem service đó đã có privileged: true chưa
+                # Sử dụng awk để kiểm tra trong block của service cụ thể
+                if ! awk -v svc="$svc" '
+                    $0 ~ "^  " svc ":" { found=1; next }
+                    found && /^  [a-zA-Z]/ { found=0 }
+                    found && /privileged: true/ { exit 0 }
+                    END { exit 1 }
+                ' "$TARGET_DIR/docker-compose.yml"; then
+                    # Thêm dòng privileged: true vào sau dòng image hoặc container_name của service
+                    # Ưu tiên thêm sau image nếu có, nếu không thì sau service name block bắt đầu
+                    sudo sed -i "/^  ${svc}:/,/^  [a-z]/{
+                        /^    image:/ {
+                            a\    privileged: true
+                            b end
+                        }
+                        /^    container_name:/ {
+                            a\    privileged: true
+                            b end
+                        }
+                        :end
+                    }" "$TARGET_DIR/docker-compose.yml"
+                    echo "   ✅ Đã thêm privileged: true cho service '$svc'"
+                else
+                    echo "   ℹ️ Service '$svc' đã có privileged: true, bỏ qua."
+                fi
             fi
+        done
+
+        echo "   🔄 Đang thử khởi động lại..."
+        if try_start; then
+            echo -e "${GREEN}✅ Supabase đã khởi động thành công với privileged mode.${NC}"
+            SUPABASE_STARTED=1
         else
-            echo -e "${YELLOW}   ⚠️ Không tìm thấy dòng sysctl trong file compose. Có thể lỗi đến từ container cũ.${NC}"
-            echo "   Đang dừng tất cả container và thử lại..."
-            $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down 2>/dev/null || true
+            echo -e "${RED}❌ Vẫn không thể khởi động.${NC}"
+            echo "   📋 Lỗi mới:"
+            echo "$LAST_DOCKER_ERR"
+            echo ""
+            echo -e "${YELLOW}⚠️ Lỗi này thường xảy ra trên VPS dùng công nghệ ảo hóa OpenVZ/LXC.${NC}"
+            echo "   Bạn có thể thử các cách sau:"
+            echo "   1. Liên hệ nhà cung cấp VPS để bật 'nesting' hoặc 'lxc.apparmor.profile=unconfined'."
+            echo "   2. Cài đặt Docker Engine từ kho chính thức (không dùng docker.io)."
+            echo "   3. Sử dụng VPS dùng ảo hóa KVM thay vì OpenVZ/LXC."
+            SUPABASE_STARTED=0
         fi
-    fi
 
     # ----- XỬ LÝ CÁC LỖI KHÁC -----
-    if echo "$DOCKER_ERR" | grep -q "no space left on device"; then
+    elif echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
         echo -e "${RED}❌ Hết dung lượng ổ đĩa.${NC}"
-        echo "   Hãy giải phóng bớt dung lượng (xem bằng lệnh: df -h)."
         exit 1
-    fi
-    if echo "$DOCKER_ERR" | grep -q "address already in use"; then
-        echo -e "${RED}❌ Một số cổng cần thiết đã bị sử dụng.${NC}"
-        echo "   Kiểm tra: sudo ss -tlnp | grep -E ':(80|443|5432|8000|8443)'"
-        echo "   Tắt dịch vụ đang chiếm cổng hoặc đổi port trong docker-compose.yml."
+    elif echo "$LAST_DOCKER_ERR" | grep -q "address already in use"; then
+        echo -e "${RED}❌ Cổng bị chiếm.${NC}"
         exit 1
-    fi
-    if echo "$DOCKER_ERR" | grep -q "permission denied"; then
+    elif echo "$LAST_DOCKER_ERR" | grep -q "permission denied"; then
         echo -e "${RED}❌ Lỗi quyền truy cập thư mục volumes.${NC}"
-        echo "   Đảm bảo thư mục $TARGET_DIR/volumes có quyền đọc/ghi phù hợp."
-        echo "   Bạn có thể thử: sudo chown -R \$USER:\$USER $TARGET_DIR/volumes"
-    fi
-
-    # ---------- LẦN 2 (sau khi sửa) ----------
-    echo "   🔄 Đang thử khởi động lại..."
-    if try_start; then
-        echo -e "${GREEN}✅ Supabase đã khởi động thành công sau khi sửa lỗi.${NC}"
-        SUPABASE_STARTED=1
     else
-        echo -e "${RED}❌ Vẫn không thể khởi động Supabase.${NC}"
-        echo "   Dưới đây là hướng dẫn chi tiết để bạn tự khắc phục:"
-        echo ""
-        echo "   1. Kiểm tra lại file docker-compose.yml:"
-        echo "      sudo nano $TARGET_DIR/docker-compose.yml"
-        echo "      - Tìm dòng 'ip_unprivileged_port_start' và xóa nó nếu còn."
-        echo "      - Đảm bảo không có dịch vụ nào khác đang chiếm cổng."
-        echo ""
-        echo "   2. Thử khởi động thủ công:"
-        echo "      cd $TARGET_DIR"
-        echo "      sudo $DOCKER_COMPOSE_CMD -f docker-compose.yml up -d"
-        echo ""
-        echo "   3. Nếu vẫn lỗi, hãy kiểm tra logs chi tiết:"
-        echo "      sudo $DOCKER_COMPOSE_CMD -f $TARGET_DIR/docker-compose.yml logs"
-        echo ""
-        echo "   📌 Mẹo: Lỗi sysctl thường xảy ra trên VPS dùng ảo hóa OpenVZ/LXC."
-        echo "      Nếu bạn chắc chắn đã xóa dòng đó mà vẫn lỗi, hãy thử:"
-        echo "      sudo systemctl restart docker"
-        exit 1
+        echo -e "${YELLOW}⚠️ Lỗi không xác định. Dưới đây là log chi tiết:${NC}"
+        echo "$LAST_DOCKER_ERR"
+    fi
+fi
+
+# Nếu vẫn chưa khởi động được, hỏi người dùng có muốn tiếp tục không
+if [ $SUPABASE_STARTED -eq 0 ]; then
+    echo ""
+    echo -e "${YELLOW}Bạn có thể tiếp tục khôi phục database và storage sau khi tự khởi động Supabase thủ công.${NC}"
+    read -p "Bạn có muốn tiếp tục các bước còn lại (import database, storage) không? (y/n): " continue_restore
+    if [ "$continue_restore" != "y" ]; then
+        echo "Đã hủy quá trình khôi phục. Bạn có thể chạy lại script sau khi khắc phục lỗi khởi động."
+        exit 0
     fi
 fi
 echo "⏳ Chờ database sẵn sàng..."
