@@ -340,66 +340,8 @@ if try_start; then
 else
     echo -e "${YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
 
-    # ----- XỬ LÝ LỖI SYSCTL (mới: sử dụng privileged mode) -----
-    if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
-        echo "   🔍 Phát hiện lỗi sysctl cứng đầu."
-        echo "   🧹 Đang dừng mọi container liên quan đến Supabase..."
-        $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
-        docker ps -a --filter "name=supabase" -q | xargs -r docker rm -f 2>/dev/null || true
-
-        # Biện pháp tương thích: thêm privileged: true vào các service thường gặp lỗi sysctl
-        echo "   🔧 Đang áp dụng biện pháp tương thích (privileged mode) cho vector, imgproxy, db..."
-        SERVICES_TO_FIX="vector imgproxy db"
-        for svc in $SERVICES_TO_FIX; do
-            # Kiểm tra xem service đó có tồn tại trong compose file không
-            if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
-                # Kiểm tra xem service đó đã có privileged: true chưa
-                # Sử dụng awk để kiểm tra trong block của service cụ thể
-                if ! awk -v svc="$svc" '
-                    $0 ~ "^  " svc ":" { found=1; next }
-                    found && /^  [a-zA-Z]/ { found=0 }
-                    found && /privileged: true/ { exit 0 }
-                    END { exit 1 }
-                ' "$TARGET_DIR/docker-compose.yml"; then
-                    # Thêm dòng privileged: true vào sau dòng image hoặc container_name của service
-                    # Ưu tiên thêm sau image nếu có, nếu không thì sau service name block bắt đầu
-                    sudo sed -i "/^  ${svc}:/,/^  [a-z]/{
-                        /^    image:/ {
-                            a\    privileged: true
-                            b end
-                        }
-                        /^    container_name:/ {
-                            a\    privileged: true
-                            b end
-                        }
-                        :end
-                    }" "$TARGET_DIR/docker-compose.yml"
-                    echo "   ✅ Đã thêm privileged: true cho service '$svc'"
-                else
-                    echo "   ℹ️ Service '$svc' đã có privileged: true, bỏ qua."
-                fi
-            fi
-        done
-
-        echo "   🔄 Đang thử khởi động lại..."
-        if try_start; then
-            echo -e "${GREEN}✅ Supabase đã khởi động thành công với privileged mode.${NC}"
-            SUPABASE_STARTED=1
-        else
-            echo -e "${RED}❌ Vẫn không thể khởi động.${NC}"
-            echo "   📋 Lỗi mới:"
-            echo "$LAST_DOCKER_ERR"
-            echo ""
-            echo -e "${YELLOW}⚠️ Lỗi này thường xảy ra trên VPS dùng công nghệ ảo hóa OpenVZ/LXC.${NC}"
-            echo "   Bạn có thể thử các cách sau:"
-            echo "   1. Liên hệ nhà cung cấp VPS để bật 'nesting' hoặc 'lxc.apparmor.profile=unconfined'."
-            echo "   2. Cài đặt Docker Engine từ kho chính thức (không dùng docker.io)."
-            echo "   3. Sử dụng VPS dùng ảo hóa KVM thay vì OpenVZ/LXC."
-            SUPABASE_STARTED=0
-        fi
-
     # ----- XỬ LÝ CÁC LỖI KHÁC -----
-    elif echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
+    if echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
         echo -e "${RED}❌ Hết dung lượng ổ đĩa.${NC}"
         exit 1
     elif echo "$LAST_DOCKER_ERR" | grep -q "address already in use"; then
