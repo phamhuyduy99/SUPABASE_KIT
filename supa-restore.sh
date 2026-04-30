@@ -163,10 +163,39 @@ mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 
 # -------------------------------------------------
-# 4. Copy cấu hình từ backup_data vào thư mục cài đặt
+# 4. Copy cấu hình từ backup_data vào thư mục cài đặt (kiểm tra chặt chẽ)
 # -------------------------------------------------
 echo "📋 Sao chép cấu hình..."
-cp "$BACKUP_DIR/config/.env" "$TARGET_DIR/"
+# Copy .env
+if cp "$BACKUP_DIR/config/.env" "$TARGET_DIR/"; then
+    echo "   ✅ .env đã được sao chép."
+else
+    echo -e "${RED}❌ Không thể sao chép .env vào $TARGET_DIR. Kiểm tra quyền ghi.${NC}"
+    echo "   Bạn có thể thử tự copy bằng lệnh:"
+    echo "   sudo cp $BACKUP_DIR/config/.env $TARGET_DIR/"
+    exit 1
+fi
+
+# Copy docker-compose.yml
+if cp "$BACKUP_DIR/config/docker-compose.yml" "$TARGET_DIR/"; then
+    echo "   ✅ docker-compose.yml đã được sao chép."
+else
+    echo -e "${RED}❌ Không thể sao chép docker-compose.yml vào $TARGET_DIR. Kiểm tra quyền ghi.${NC}"
+    echo "   Bạn có thể thử tự copy bằng lệnh:"
+    echo "   sudo cp $BACKUP_DIR/config/docker-compose.yml $TARGET_DIR/"
+    exit 1
+fi
+
+# Kiểm tra sự tồn tại của file docker-compose.yml sau khi copy
+if [ ! -f "$TARGET_DIR/docker-compose.yml" ]; then
+    echo -e "${RED}❌ File docker-compose.yml không tồn tại trong $TARGET_DIR sau khi copy.${NC}"
+    echo "   Điều này có thể do hết dung lượng đĩa hoặc lỗi hệ thống."
+    echo "   Vui lòng kiểm tra và thử lại, hoặc copy thủ công:"
+    echo "   cp $BACKUP_DIR/config/docker-compose.yml $TARGET_DIR/"
+    exit 1
+fi
+
+echo "   ✅ Xác nhận docker-compose.yml đã sẵn sàng."
 
 # Phục hồi volumes (ưu tiên thư mục, sau đó mới đến file nén)
 if [ -d "$BACKUP_DIR/volumes" ] && [ "$(ls -A "$BACKUP_DIR/volumes" 2>/dev/null)" ]; then
@@ -202,7 +231,107 @@ fi
 # 6. Khởi động Supabase
 # -------------------------------------------------
 echo "🚀 Khởi động Supabase..."
-docker compose up -d
+
+# Kiểm tra dung lượng đĩa trước khi khởi động (cần ít nhất 500MB trống)
+if ! check_disk_space 500 "$TARGET_DIR"; then
+    echo -e "${RED}❌ Không đủ dung lượng đĩa để khởi động Supabase.${NC}"
+    echo "   Hãy giải phóng bớt dung lượng hoặc mở rộng ổ đĩa."
+    exit 1
+fi
+
+# Hàm thử khởi động (chạy ngầm, capture lỗi)
+try_start() {
+    local err_log="/tmp/docker_start_err_$$.log"
+    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d 2>"$err_log"
+    local ec=$?
+    if [ $ec -ne 0 ]; then
+        cat "$err_log"
+        rm -f "$err_log"
+        return 1
+    fi
+    rm -f "$err_log"
+    return 0
+}
+
+# ---------- LẦN 1 ----------
+SUPABASE_STARTED=0
+if try_start; then
+    echo -e "${GREEN}✅ Supabase khởi động thành công.${NC}"
+    SUPABASE_STARTED=1
+else
+    echo -e "${YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
+
+    # Biến lưu lỗi
+    DOCKER_ERR=$(try_start 2>&1) || true
+
+    # ----- XỬ LÝ LỖI SYSCTL -----
+    if echo "$DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
+        echo "   🔍 Phát hiện lỗi sysctl (ip_unprivileged_port_start)."
+        # Kiểm tra xem file có thực sự chứa dòng đó không
+        if grep -q "ip_unprivileged_port_start" "$TARGET_DIR/docker-compose.yml"; then
+            echo "   🔧 Đang tự động xóa mọi dòng chứa 'ip_unprivileged_port_start' khỏi docker-compose.yml..."
+            sudo sed -i '/ip_unprivileged_port_start/d' "$TARGET_DIR/docker-compose.yml"
+            # Xác nhận đã xóa thành công
+            if grep -q "ip_unprivileged_port_start" "$TARGET_DIR/docker-compose.yml"; then
+                echo -e "${RED}   ❌ Không thể tự động sửa file docker-compose.yml.${NC}"
+                echo "   Bạn vui lòng tự mở file và xóa dòng có chứa 'ip_unprivileged_port_start'."
+                echo "   File: $TARGET_DIR/docker-compose.yml"
+                echo "   Dòng cần xóa thường nằm trong service 'vector' hoặc 'imgproxy'."
+            else
+                echo "   ✅ Đã xóa thành công dòng sysctl không tương thích."
+            fi
+        else
+            echo -e "${YELLOW}   ⚠️ Không tìm thấy dòng sysctl trong file compose. Có thể lỗi đến từ container cũ.${NC}"
+            echo "   Đang dừng tất cả container và thử lại..."
+            $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down 2>/dev/null || true
+        fi
+    fi
+
+    # ----- XỬ LÝ CÁC LỖI KHÁC -----
+    if echo "$DOCKER_ERR" | grep -q "no space left on device"; then
+        echo -e "${RED}❌ Hết dung lượng ổ đĩa.${NC}"
+        echo "   Hãy giải phóng bớt dung lượng (xem bằng lệnh: df -h)."
+        exit 1
+    fi
+    if echo "$DOCKER_ERR" | grep -q "address already in use"; then
+        echo -e "${RED}❌ Một số cổng cần thiết đã bị sử dụng.${NC}"
+        echo "   Kiểm tra: sudo ss -tlnp | grep -E ':(80|443|5432|8000|8443)'"
+        echo "   Tắt dịch vụ đang chiếm cổng hoặc đổi port trong docker-compose.yml."
+        exit 1
+    fi
+    if echo "$DOCKER_ERR" | grep -q "permission denied"; then
+        echo -e "${RED}❌ Lỗi quyền truy cập thư mục volumes.${NC}"
+        echo "   Đảm bảo thư mục $TARGET_DIR/volumes có quyền đọc/ghi phù hợp."
+        echo "   Bạn có thể thử: sudo chown -R \$USER:\$USER $TARGET_DIR/volumes"
+    fi
+
+    # ---------- LẦN 2 (sau khi sửa) ----------
+    echo "   🔄 Đang thử khởi động lại..."
+    if try_start; then
+        echo -e "${GREEN}✅ Supabase đã khởi động thành công sau khi sửa lỗi.${NC}"
+        SUPABASE_STARTED=1
+    else
+        echo -e "${RED}❌ Vẫn không thể khởi động Supabase.${NC}"
+        echo "   Dưới đây là hướng dẫn chi tiết để bạn tự khắc phục:"
+        echo ""
+        echo "   1. Kiểm tra lại file docker-compose.yml:"
+        echo "      sudo nano $TARGET_DIR/docker-compose.yml"
+        echo "      - Tìm dòng 'ip_unprivileged_port_start' và xóa nó nếu còn."
+        echo "      - Đảm bảo không có dịch vụ nào khác đang chiếm cổng."
+        echo ""
+        echo "   2. Thử khởi động thủ công:"
+        echo "      cd $TARGET_DIR"
+        echo "      sudo $DOCKER_COMPOSE_CMD -f docker-compose.yml up -d"
+        echo ""
+        echo "   3. Nếu vẫn lỗi, hãy kiểm tra logs chi tiết:"
+        echo "      sudo $DOCKER_COMPOSE_CMD -f $TARGET_DIR/docker-compose.yml logs"
+        echo ""
+        echo "   📌 Mẹo: Lỗi sysctl thường xảy ra trên VPS dùng ảo hóa OpenVZ/LXC."
+        echo "      Nếu bạn chắc chắn đã xóa dòng đó mà vẫn lỗi, hãy thử:"
+        echo "      sudo systemctl restart docker"
+        exit 1
+    fi
+fi
 echo "⏳ Chờ database sẵn sàng..."
 
 # Poll database status
@@ -322,7 +451,11 @@ fi
 # -------------------------------------------------
 # 10. Khởi động lại và hiển thị thông tin
 # -------------------------------------------------
-$DOCKER_COMPOSE_CMD restart
+$DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" restart || {
+    echo -e "${RED}❌ Khởi động lại Supabase thất bại.${NC}"
+    echo "   Hãy kiểm tra file docker-compose.yml tại $TARGET_DIR và thử lại."
+    exit 1
+}
 IP=$(hostname -I | awk '{print $1}')
 log_info "Khôi phục hoàn tất tại $TARGET_DIR"
 echo -e "${GREEN}=============================================${NC}"

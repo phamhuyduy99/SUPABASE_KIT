@@ -16,20 +16,18 @@ I. YÊU CẦU
   Mẹo: Để biết tên người dùng của bạn, gõ lệnh: whoami
 
 II. CÀI ĐẶT & CHẠY LẦN ĐẦU (CHỈ MỘT LỆNH)
-1. Upload file ZIP lên VPS, giải nén vào thư mục dự án Supabase (nơi có file .env).
-   Ví dụ:
-     unzip SUPABASE_KIT.zip -d supabase-kit
-     cd supabase-kit
+1. Nếu bạn có file backup .tar.gz, hãy giải nén nó:
+     tar xzf supabase-backup-XXXXX.tar.gz
+     cd supabase-backup-XXXXX
+   Nếu bạn tải bộ kit từ file ZIP, giải nén và vào thư mục đó.
 
 2. Chạy lệnh duy nhất:
-     bash supa-start.sh
-
-   Bộ kit sẽ TỰ ĐỘNG quét hệ thống và hiển thị những chức năng đã sẵn sàng,
-   những gì cần cài thêm. Sau đó bạn có thể vào menu chính.
-
-   Nếu gặp lỗi "Permission denied", hãy chạy:
-     chmod +x supa-*.sh common.sh
      sudo bash supa-start.sh
+
+   Bộ kit sẽ TỰ ĐỘNG phát hiện gói backup tự hành và thiết lập cấu hình,
+   hoặc quét hệ thống như bình thường. Sau đó menu chính sẽ hiện ra.
+
+   Bạn KHÔNG cần nhập đường dẫn thư mục dự án nếu dùng gói backup tự hành.
 
 III. CÁC CHỨC NĂNG TRONG MENU
 - [1] Đóng băng hệ thống (Backup): Tạo file sao lưu toàn bộ dữ liệu và
@@ -68,6 +66,13 @@ IV. CÁC TÌNH HUỐNG THƯỜNG GẶP
    kèm thời gian và tên người dùng. Để xem log, chạy lệnh:
      cat /var/log/supabase-kit.log
    Nếu không có quyền đọc /var/log, log sẽ được lưu tại ~/supabase-kit.log.
+8. Lỗi "sysctl net.ipv4.ip_unprivileged_port_start: permission denied":
+   Script sẽ tự động comment dòng cấu hình này trong docker-compose.yml và thử lại.
+   Nếu bạn tự sửa, hãy mở file docker-compose.yml, tìm dòng:
+     sysctls:
+       - net.ipv4.ip_unprivileged_port_start=0
+   Và thêm dấu # ở đầu để vô hiệu hóa nó, sau đó chạy:
+     sudo docker compose -f /opt/supabase-restored/docker-compose.yml up -d
 
 V. CẤU HÌNH GOOGLE DRIVE (TÙY CHỌN)
    ... (giữ nguyên)

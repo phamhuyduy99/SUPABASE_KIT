@@ -26,8 +26,17 @@ ensure_project_dir() {
     if [ -z "$PROJECT_DIR" ]; then
         PROJECT_DIR=$(auto_find_supabase_dir "$SCRIPT_DIR")
         if [ -z "$PROJECT_DIR" ]; then
-            echo -e "${YELLOW}Không tìm thấy file .env và docker-compose.yml tự động.${NC}"
-            PROJECT_DIR=$(input_supabase_dir)
+            # Nếu không tìm thấy, kiểm tra có phải gói backup tự hành không (backup_data/config có sẵn)
+            if [ -f "$SCRIPT_DIR/backup_data/config/.env" ] && [ -f "$SCRIPT_DIR/backup_data/config/docker-compose.yml" ]; then
+                echo -e "${YELLOW}📦 Phát hiện gói backup tự hành. Đang thiết lập cấu hình...${NC}"
+                cp "$SCRIPT_DIR/backup_data/config/.env" "$SCRIPT_DIR/"
+                cp "$SCRIPT_DIR/backup_data/config/docker-compose.yml" "$SCRIPT_DIR/"
+                PROJECT_DIR="$SCRIPT_DIR"
+                echo -e "${GREEN}✅ Đã sẵn sàng. Bạn có thể tiếp tục sử dụng các chức năng.${NC}"
+            else
+                echo -e "${YELLOW}Không tìm thấy file .env và docker-compose.yml tự động.${NC}"
+                PROJECT_DIR=$(input_supabase_dir)
+            fi
         fi
     fi
 }

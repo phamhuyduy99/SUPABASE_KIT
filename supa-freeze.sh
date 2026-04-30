@@ -234,6 +234,7 @@ if [ -n "$REMOTE" ]; then
     echo "   2. (Thủ công) Bạn tự copy bằng lệnh hoặc thêm vào file authorized_keys."
     echo ""
     read -p "   Bạn muốn script tự copy giúp không? (y/n): " auto_copy_ssh
+
     if [ "$auto_copy_ssh" = "y" ]; then
         echo -e "${CYAN}   Đang copy public key sang $REMOTE...${NC}"
         echo "   Bạn hãy nhập MẬT KHẨU của VPS đích khi được hỏi."
@@ -250,51 +251,108 @@ if [ -n "$REMOTE" ]; then
         fi
     fi
 
-    # ---------- Kiểm tra kết nối SSH và tạo thư mục từ xa ----------
-    echo -e "${CYAN}   Kiểm tra kết nối SSH tới $REMOTE...${NC}"
-    if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "${REMOTE}" 'mkdir -p ~/backups && echo "OK"' >/dev/null 2>&1; then
-        echo -e "${GREEN}   ✅ Kết nối SSH thành công, đã tạo thư mục ~/backups trên VPS đích.${NC}"
-        SSH_OK=1
+    # ---------- Chẩn đoán lỗi SSH chi tiết ----------
+    echo -e "${CYAN}   Đang kiểm tra kết nối SSH tới $REMOTE...${NC}"
+    SSH_ERROR=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -v "${REMOTE}" 'echo "OK"' 2>&1)
+    SSH_EXIT_CODE=$?
+
+    if [ $SSH_EXIT_CODE -eq 0 ]; then
+        # Kết nối thành công, kiểm tra thư mục home
+        if ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'mkdir -p ~/backups && echo "HOME_OK"' 2>/dev/null | grep -q "HOME_OK"; then
+            echo -e "${GREEN}   ✅ Kết nối SSH thành công, thư mục ~/backups đã sẵn sàng.${NC}"
+            SSH_OK=1
+        else
+            echo -e "${RED}   ❌ Kết nối SSH được nhưng không thể tạo thư mục ~/backups.${NC}"
+            echo "   Nguyên nhân có thể:"
+            echo "   - Thư mục home của bạn trên VPS đích không tồn tại."
+            echo "   - Bạn không có quyền ghi vào thư mục home."
+            echo ""
+            echo "   👉 Cách khắc phục:"
+            echo "      SSH vào VPS đích và chạy lệnh sau:"
+            echo "      ssh $REMOTE"
+            echo "      mkdir -p ~/backups"
+            echo "      Nếu lệnh mkdir báo lỗi, hãy liên hệ quản trị VPS để tạo thư mục home cho bạn."
+            SSH_OK=0
+        fi
     else
-        echo -e "${YELLOW}   ⚠️ Không thể kết nối SSH tới $REMOTE.${NC}"
-        echo "   Rất có thể public key của bạn chưa được copy sang VPS đích."
-        echo "   Hãy thực hiện MỘT TRONG CÁC CÁCH SAU:"
+        # Kết nối thất bại, phân tích lỗi
+        echo -e "${RED}   ❌ Không thể kết nối SSH tới $REMOTE.${NC}"
         echo ""
-        echo "   CÁCH 1 (đơn giản nhất): Chạy lệnh này trên máy hiện tại:"
-        echo "     ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
-        echo "     (Bạn sẽ được hỏi mật khẩu của VPS đích một lần)"
+        # Phân tích thông báo lỗi phổ biến
+        if echo "$SSH_ERROR" | grep -q "Connection refused"; then
+            echo "   🔍 Lỗi: Connection refused (Kết nối bị từ chối)"
+            echo "   Nguyên nhân: Dịch vụ SSH trên VPS đích không chạy hoặc cổng 22 bị chặn."
+            echo "   Cách khắc phục:"
+            echo "   - Kiểm tra xem VPS đích có đang bật không."
+            echo "   - Đảm bảo dịch vụ SSH đang chạy: sudo systemctl status sshd"
+            echo "   - Kiểm tra firewall: sudo ufw allow 22"
+        elif echo "$SSH_ERROR" | grep -q "Connection timed out"; then
+            echo "   🔍 Lỗi: Connection timed out (Quá thời gian kết nối)"
+            echo "   Nguyên nhân: IP của VPS đích không đúng, hoặc firewall đang chặn."
+            echo "   Cách khắc phục:"
+            echo "   - Kiểm tra lại địa chỉ IP: $REMOTE"
+            echo "   - Đảm bảo VPS đích cho phép kết nối từ IP của bạn."
+        elif echo "$SSH_ERROR" | grep -q "Permission denied"; then
+            echo "   🔍 Lỗi: Permission denied (Quyền truy cập bị từ chối)"
+            echo "   Nguyên nhân: Public key chưa được copy sang VPS đích, hoặc sai mật khẩu."
+            echo "   Cách khắc phục:"
+            echo "   - Chạy lệnh sau để copy public key:"
+            echo "     ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
+            echo "   - Hoặc tự thêm public key vào ~/.ssh/authorized_keys trên VPS đích."
+            echo ""
+            echo "   📋 Public key của bạn (copy toàn bộ dòng bên dưới):"
+            cat ~/.ssh/id_rsa.pub 2>/dev/null
+        elif echo "$SSH_ERROR" | grep -q "No route to host"; then
+            echo "   🔍 Lỗi: No route to host (Không tìm thấy đường tới máy chủ)"
+            echo "   Nguyên nhân: IP sai hoặc VPS đích không tồn tại."
+            echo "   Cách khắc phục: Kiểm tra lại địa chỉ IP."
+        elif echo "$SSH_ERROR" | grep -q "Host key verification failed"; then
+            echo "   🔍 Lỗi: Host key verification failed (Khóa máy chủ không khớp)"
+            echo "   Nguyên nhân: Key của VPS đích đã thay đổi (có thể do cài lại OS)."
+            echo "   Cách khắc phục:"
+            echo "   - Chạy lệnh sau để xóa key cũ:"
+            echo "     ssh-keygen -R ${REMOTE##*@}"
+        elif echo "$SSH_ERROR" | grep -q "Could not resolve hostname"; then
+            echo "   🔍 Lỗi: Could not resolve hostname (Không phân giải được tên miền)"
+            echo "   Nguyên nhân: Tên miền không đúng hoặc DNS không hoạt động."
+            echo "   Cách khắc phục: Kiểm tra lại tên miền hoặc dùng địa chỉ IP."
+        else
+            echo "   🔍 Lỗi không xác định. Dưới đây là thông tin chi tiết để bạn nhờ hỗ trợ:"
+            echo "   $SSH_ERROR" | tail -5
+        fi
         echo ""
-        echo "   CÁCH 2: Tự thêm public key thủ công:"
-        echo "     1. Copy nội dung public key của bạn (giữa hai dòng ===):"
-        echo "        ========================================"
-        cat ~/.ssh/id_rsa.pub 2>/dev/null || echo "        (Không tìm thấy public key)"
-        echo "        ========================================"
-        echo "     2. SSH vào VPS đích (bằng mật khẩu):"
-        echo "        ssh $REMOTE"
-        echo "     3. Mở file authorized_keys:"
-        echo "        nano ~/.ssh/authorized_keys"
-        echo "     4. Dán nội dung public key ở trên vào cuối file, lưu và thoát."
-        echo "     5. Thoát SSH và thử lại đồng bộ."
-        echo ""
-        echo "   Sau khi thực hiện xong, bạn có thể chạy lại chức năng Backup để đồng bộ."
+        echo "   📂 File backup vẫn được lưu tại: $BACKUP_FILE"
+        echo "   Bạn có thể tự copy file này sang VPS đích sau khi khắc phục lỗi SSH."
         SSH_OK=0
     fi
 
     # ---------- Thực hiện rsync nếu kết nối OK ----------
     if [ $SSH_OK -eq 1 ]; then
         echo -e "${CYAN}   Đang đồng bộ file backup...${NC}"
-        if rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:~/backups/"; then
-            echo -e "${GREEN}✅ Đồng bộ thành công! File backup đã ở VPS đích: ~/backups/$(basename "$BACKUP_FILE")${NC}"
-            log_info "Đồng bộ thành công tới $REMOTE"
+
+        # Lấy thư mục home thực tế của user trên VPS đích
+        REMOTE_HOME=$(ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'echo $HOME' 2>/dev/null)
+        if [ -n "$REMOTE_HOME" ] && ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "test -d '$REMOTE_HOME'" 2>/dev/null; then
+            DEST_DIR="${REMOTE_HOME}/backups"
+            echo -e "   📁 Thư mục đích: ${REMOTE}:${DEST_DIR}"
+            # Tạo thư mục đích nếu chưa có
+            ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_DIR'" 2>/dev/null
+        else
+            # Fallback an toàn: dùng /tmp/backups
+            DEST_DIR="/tmp/backups"
+            echo -e "${YELLOW}   ⚠️ Không xác định được thư mục home. Dùng tạm ${REMOTE}:${DEST_DIR}${NC}"
+            echo "   Lưu ý: File backup sẽ không tồn tại lâu trong /tmp. Bạn nên tự copy ra nơi khác."
+            ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_DIR'" 2>/dev/null
+        fi
+
+        # Thực hiện rsync với đường dẫn tuyệt đối an toàn
+        if rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:${DEST_DIR}/"; then
+            echo -e "${GREEN}✅ Đồng bộ thành công! File backup đã ở VPS đích: ${DEST_DIR}/$(basename "$BACKUP_FILE")${NC}"
         else
             echo -e "${RED}❌ Đồng bộ thất bại dù SSH đã kết nối được.${NC}"
-            echo "   Kiểm tra dung lượng ổ đĩa và quyền ghi trên VPS đích."
-            log_error "Đồng bộ thất bại tới $REMOTE dù SSH đã kết nối"
+            echo "   Bạn có thể thử tự copy file bằng lệnh scp:"
+            echo "   scp $BACKUP_FILE ${REMOTE}:${DEST_DIR}/"
         fi
-    else
-        echo -e "${YELLOW}   Bỏ qua đồng bộ vì chưa kết nối được SSH.${NC}"
-        echo "   Bạn vẫn có thể chạy lại chức năng Backup sau khi đã thiết lập SSH key."
-        log_warn "Bỏ qua đồng bộ vì chưa kết nối được SSH"
     fi
 fi
 
