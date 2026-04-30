@@ -197,6 +197,21 @@ fi
 
 echo "   ✅ Xác nhận docker-compose.yml đã sẵn sàng."
 
+# Đảm bảo tương thích LXC/OpenVZ: thêm privileged mode cho các service cần sysctl
+echo "🔧 Đang tối ưu cấu hình cho môi trường ảo hóa..."
+SERVICES_TO_FIX="vector imgproxy db"
+for svc in $SERVICES_TO_FIX; do
+    if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
+        # Kiểm tra xem service đã có privileged: true chưa
+        if ! awk -v svc="$svc" '$0 ~ "^  " svc ":" {found=1} found && /privileged: true/ {exit 1}' "$TARGET_DIR/docker-compose.yml"; then
+            # Thêm dòng privileged: true vào sau dòng 'image:' của service
+            sudo sed -i "/^  ${svc}:/,/^  [a-z]/{/^    image:/a\    privileged: true
+            }" "$TARGET_DIR/docker-compose.yml"
+            echo "   ✅ Đã thêm privileged: true cho service '$svc'"
+        fi
+    fi
+done
+
 # ------------------------------------------------------------
 # CHUẨN BỊ MÔI TRƯỜNG SẠCH TRƯỚC KHI KHỞI ĐỘNG (CÓ HỎI)
 # ------------------------------------------------------------
@@ -220,7 +235,7 @@ ORPHAN_CONTAINERS=$(docker ps -a --filter "name=supabase" -q 2>/dev/null)
 if [ -n "$ORPHAN_CONTAINERS" ]; then
     echo -e "${YELLOW}⚠️ Tìm thấy các container Supabase cũ (từ lần khôi phục trước).${NC}"
     echo "   Danh sách container sắp bị xóa:"
-    docker ps -a --filter "name=supabase" --format "{{.Names}}\t{{.Status}}" 2>/dev/null
+    docker ps -a --filter "name=supabase" --format "   .Names\t.Status" 2>/dev/null
     read -p "👉 Bạn có muốn xóa các container này không? (y/n): " confirm_orphan
     if [ "$confirm_orphan" = "y" ]; then
         docker rm -f $ORPHAN_CONTAINERS 2>/dev/null || true
