@@ -9,6 +9,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
+log_info "Bắt đầu quá trình khôi phục Supabase"
+
 echo -e "${BOLD}${CYAN}======================================${NC}"
 echo -e "${BOLD}${CYAN}  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE${NC}"
 echo -e "${BOLD}${CYAN}======================================${NC}"
@@ -60,12 +62,14 @@ else
                     continue
                 fi
             fi
-            LOCAL_FILE="/tmp/restore-backup.tar.gz"
-            # Xóa sạch đích nếu đã tồn tại (tránh lỗi "Is a directory")
+            # Tạo tên file tạm DUY NHẤT bằng PID của shell hiện tại
+            LOCAL_FILE="/tmp/restore-backup-$$.tar.gz"
+            # Xóa sạch nếu file/thư mục cũ cùng tên vẫn còn
             rm -rf "$LOCAL_FILE"
-            # Thử tải, nếu lỗi thì gợi ý làm mới token và thử lại
+
+            # Thử tải
             if ! download_from_gdrive "$SRC" "$LOCAL_FILE"; then
-                # Gợi ý làm mới token
+                # Nếu lỗi thì gợi ý làm mới token và thử lại một lần
                 if suggest_gdrive_reconnect; then
                     echo "🔄 Token đã được cập nhật, đang thử tải lại..."
                     rm -rf "$LOCAL_FILE"
@@ -77,11 +81,27 @@ else
                 echo -e "${RED}❌ Không thể tải file từ Google Drive. Vui lòng thử lại.${NC}"
                 continue
             fi
+
+            # Kiểm tra file tải về có thực sự là file hợp lệ không
+            if [ ! -f "$LOCAL_FILE" ]; then
+                echo -e "${RED}File tải về không tồn tại hoặc là thư mục.${NC}"
+                log_error "Tải từ Google Drive thất bại: $LOCAL_FILE không phải là file hợp lệ"
+                continue
+            fi
+            if [ ! -s "$LOCAL_FILE" ]; then
+                echo -e "${RED}File tải về rỗng (0 byte).${NC}"
+                log_error "File tải về rỗng: $LOCAL_FILE"
+                continue
+            fi
+
             BACKUP_FILE="$LOCAL_FILE"
+            log_info "Tải thành công backup từ Google Drive: $SRC -> $LOCAL_FILE"
             break
         elif [[ "$SRC" =~ ^https?:// ]]; then
             echo "📥 Đang tải từ URL..."
-            wget -O /tmp/restore-backup.tar.gz "$SRC" && BACKUP_FILE="/tmp/restore-backup.tar.gz" && break
+            LOCAL_FILE="/tmp/restore-backup-$$.tar.gz"
+            rm -rf "$LOCAL_FILE"
+            wget -O "$LOCAL_FILE" "$SRC" && BACKUP_FILE="$LOCAL_FILE" && break
             echo -e "${RED}Tải thất bại. Kiểm tra URL.${NC}"
         else
             if validate_backup_file "$SRC"; then
@@ -103,12 +123,17 @@ else
 
     # Giải nén và tìm backup_data
     TMP_DIR=$(mktemp -d)
+    log_info "Giải nén backup vào $TMP_DIR"
     echo "📦 Giải nén backup vào $TMP_DIR..."
-    tar xzf "$BACKUP_FILE" -C "$TMP_DIR" || { echo -e "${RED}Lỗi giải nén.${NC}"; exit 1; }
+    tar xzf "$BACKUP_FILE" -C "$TMP_DIR" || { 
+        log_error "Giải nén backup thất bại: $BACKUP_FILE"
+        echo -e "${RED}Lỗi giải nén.${NC}"; exit 1; 
+    }
     # Lấy thư mục con đầu tiên (tên thư mục gốc trong backup)
     EXTRACTED_DIR=$(ls -1 "$TMP_DIR" | head -1)
     BACKUP_DIR="$TMP_DIR/$EXTRACTED_DIR/backup_data"
     if [ ! -d "$BACKUP_DIR" ]; then
+        log_error "Backup không chứa thư mục backup_data: $BACKUP_FILE"
         echo -e "${RED}❌ File backup không chứa backup_data.${NC}"
         rm -rf "$TMP_DIR"
         exit 1
@@ -169,6 +194,8 @@ if ! command -v docker &> /dev/null; then
         echo "   sudo usermod -aG docker $REAL_USER"
     fi
     log_info "Docker đã được cài đặt (nếu cần)"
+else
+    log_info "Docker đã sẵn sàng (hoặc đã được cài đặt)"
 fi
 
 # -------------------------------------------------
@@ -203,7 +230,10 @@ fi
 echo "🗄️ Import database..."
 gunzip -c "$BACKUP_DIR/database/full_backup.sql.gz" > /tmp/restore.sql
 docker cp /tmp/restore.sql $DB_CONT:/tmp/
-docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql || { rm /tmp/restore.sql; exit 1; }
+docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql || { 
+    log_error "Import database thất bại"
+    rm /tmp/restore.sql; exit 1; 
+}
 rm /tmp/restore.sql
 log_info "Import database thành công"
 
