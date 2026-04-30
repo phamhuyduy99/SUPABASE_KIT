@@ -63,6 +63,11 @@ IV. CÁC TÌNH HUỐNG THƯỜNG GẶP
    Hệ thống đang bận, script sẽ tự động chờ tối đa 5 phút.
 6. Token Google Drive hết hạn:
    Script sẽ đề xuất chạy 'rclone config reconnect gdrive:' để làm mới.
+7. Xem lịch sử thao tác (log):
+   Mọi thao tác của bạn (backup, restore, cấu hình...) đều được ghi lại
+   kèm thời gian và tên người dùng. Để xem log, chạy lệnh:
+     cat /var/log/supabase-kit.log
+   Nếu không có quyền đọc /var/log, log sẽ được lưu tại ~/supabase-kit.log.
 
 V. CẤU HÌNH GOOGLE DRIVE (TÙY CHỌN)
    ... (giữ nguyên)

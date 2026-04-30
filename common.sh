@@ -24,6 +24,31 @@ else
     REAL_USER="$(whoami)"         # Nếu không, dùng whoami
 fi
 
+# ---------- HỆ THỐNG LOG ----------
+# Xác định file log: ưu tiên /var/log/supabase-kit.log, nếu không có quyền thì dùng ~/supabase-kit.log
+if [ -w "/var/log" ]; then
+    LOG_FILE="/var/log/supabase-kit.log"
+else
+    LOG_FILE="$HOME/supabase-kit.log"
+fi
+
+# Hàm ghi log với timestamp và tên người dùng thực
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] [${REAL_USER:-unknown}] $*" >> "$LOG_FILE"
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] [${REAL_USER:-unknown}] $*" >> "$LOG_FILE"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] [${REAL_USER:-unknown}] $*" >> "$LOG_FILE"
+}
+
+# Ghi log bắt đầu phiên làm việc mới
+log_info "=============================================="
+log_info "Bắt đầu phiên làm việc mới"
+
 # ---------- PHÁT HIỆN DOCKER COMPOSE ----------
 detect_docker_compose() {
     if docker compose version &>/dev/null 2>&1; then

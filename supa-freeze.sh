@@ -41,6 +41,7 @@ else
     fi
 fi
 
+log_info "Bắt đầu backup Supabase tại $PROJECT_DIR"
 echo -e "${BOLD}${CYAN}======================================${NC}"
 echo -e "${BOLD}${CYAN}  🧊 ĐÓNG BĂNG HỆ THỐNG SUPABASE${NC}"
 echo -e "${BOLD}${CYAN}======================================${NC}"
@@ -62,6 +63,7 @@ if [ -z "$DB_CONT" ]; then
     echo "Vui lòng khởi động Supabase trước khi backup."
     exit 1
 fi
+log_info "Container database: $DB_CONT"
 echo "📌 Container database: $DB_CONT"
 
 # ------------------------------------------------------------
@@ -208,6 +210,7 @@ cd "$TMP_ROOT"
 tar czf "$BACKUP_FILE" "$PACK_NAME"
 rm -rf "$TMP_ROOT"
 echo -e "${GREEN}✅ Backup thành công: $BACKUP_FILE${NC}"
+log_info "Backup thành công: $BACKUP_FILE"
 
 # ------------------------------------------------------------
 # 10. Đồng bộ sang VPS dự phòng (tự động hướng dẫn SSH key)
@@ -242,8 +245,10 @@ if [ -n "$REMOTE" ]; then
     # Thực hiện rsync
     rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:~/backups/" && {
         echo -e "${GREEN}✅ Đồng bộ thành công tới ${REMOTE}:~/backups/$(basename "$BACKUP_FILE")${NC}"
+        log_info "Đồng bộ thành công tới $REMOTE"
         } || {
         echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
+        log_error "Đồng bộ thất bại tới $REMOTE"
         echo "   Vui lòng kiểm tra:"
         echo "   - Kết nối SSH tới $REMOTE có hoạt động không?"
         echo "   - Bạn đã copy public key sang VPS đích: ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
@@ -258,6 +263,7 @@ fi
 if [ "$UPLOAD_DRIVE" = "y" ] && rclone listremotes | grep -q "^gdrive:"; then
     echo "📤 Upload lên Google Drive..."
     upload_to_gdrive "$BACKUP_FILE"
+    log_info "Upload Google Drive thành công: $BACKUP_FILE"
 fi
 
 # ------------------------------------------------------------
@@ -274,6 +280,7 @@ if [[ "$1" != "--cron" ]]; then
         CRON_LINE="0 2 * * * $SCRIPT_PATH --cron $PROJECT_DIR"
         (crontab -l 2>/dev/null; echo "$CRON_LINE") | sort -u | crontab -
         echo -e "${GREEN}✅ Cron job đã được thêm. Hệ thống sẽ tự động backup lúc 2h sáng mỗi ngày.${NC}"
+        log_info "Đã thêm cron job backup hàng ngày"
     fi
 fi
 

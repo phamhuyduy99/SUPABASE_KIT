@@ -23,6 +23,7 @@ else
     CURRENT_USER="${USER:-$(whoami)}"
 fi
 
+log_info "Khởi động Supabase Kit bởi $CURRENT_USER"
 echo "🚀 Khởi động Supabase Kit..."
 
 # ===== KIỂM TRA MÔI TRƯỜNG CƠ BẢN =====

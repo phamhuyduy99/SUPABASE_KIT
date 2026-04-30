@@ -115,6 +115,8 @@ else
     fi
 fi
 
+log_info "Bắt đầu khôi phục Supabase từ $BACKUP_FILE"
+
 # -------------------------------------------------
 # 2. Nhập domain (tùy chọn)
 # -------------------------------------------------
@@ -131,6 +133,7 @@ fi
 read -p "Thư mục cài Supabase (mặc định /opt/supabase-restored): " TARGET_DIR
 TARGET_DIR="${TARGET_DIR:-/opt/supabase-restored}"
 echo "📁 Thư mục cài đặt: $TARGET_DIR"
+log_info "Thư mục cài đặt: $TARGET_DIR"
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 
@@ -165,6 +168,7 @@ if ! command -v docker &> /dev/null; then
         echo -e "${YELLOW}⚠️ Thêm user '$REAL_USER' vào group docker để dùng không cần sudo.${NC}"
         echo "   sudo usermod -aG docker $REAL_USER"
     fi
+    log_info "Docker đã được cài đặt (nếu cần)"
 fi
 
 # -------------------------------------------------
@@ -201,6 +205,7 @@ gunzip -c "$BACKUP_DIR/database/full_backup.sql.gz" > /tmp/restore.sql
 docker cp /tmp/restore.sql $DB_CONT:/tmp/
 docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql || { rm /tmp/restore.sql; exit 1; }
 rm /tmp/restore.sql
+log_info "Import database thành công"
 
 # -------------------------------------------------
 # 8. Import storage
@@ -215,6 +220,7 @@ if [ -f "$BACKUP_DIR/storage/storage.tar.gz" ]; then
         [ -d volumes/storage ] && tar xzf "$BACKUP_DIR/storage/storage.tar.gz" -C volumes/storage
     fi
     echo "✅ Storage đã phục hồi."
+    log_info "Import storage thành công"
 else
     echo "ℹ️ Không có dữ liệu storage."
 fi
@@ -288,6 +294,7 @@ fi
 # -------------------------------------------------
 $DOCKER_COMPOSE_CMD restart
 IP=$(hostname -I | awk '{print $1}')
+log_info "Khôi phục hoàn tất tại $TARGET_DIR"
 echo -e "${GREEN}=============================================${NC}"
 echo -e "${GREEN}  🎉 KHÔI PHỤC HOÀN TẤT!${NC}"
 echo -e "${GREEN}=============================================${NC}"

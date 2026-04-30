@@ -69,37 +69,26 @@ while true; do
     echo -ne "👉 Nhập lựa chọn: "
     read choice
     case $choice in
-        1)
-            # Backup cần thư mục dự án hiện tại
-            ensure_project_dir
-            bash supa-freeze.sh "$PROJECT_DIR"
-            ;;
-        2)
-            # Restore không cần thư mục dự án, script tự xử lý
-            bash supa-restore.sh
-            ;;
-        3)
-            bash supa-setup-nginx.sh
-            ;;
-        4)
-            bash supa-status.sh
-            ;;
-        5)
-            # Cài cron backup cũng cần thư mục dự án
-            ensure_project_dir
-            setup_auto_backup
-            ;;
-        6)
-            bash supa-setup-gdrive.sh
-            ;;
-        0)
-            echo "Tạm biệt!"
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}Lựa chọn không hợp lệ.${NC}"
-            sleep 1
-            ;;
+        1) log_info "Người dùng chọn: Đóng băng hệ thống"
+           bash supa-freeze.sh "$PROJECT_DIR" ;;
+        2) log_info "Người dùng chọn: Khôi phục hệ thống"
+           bash supa-restore.sh ;;
+        3) log_info "Người dùng chọn: Cài HTTPS & domain"
+           bash supa-setup-nginx.sh ;;
+        4) log_info "Người dùng chọn: Kiểm tra trạng thái"
+           bash supa-status.sh ;;
+        5) log_info "Người dùng chọn: Thiết lập tự động backup"
+           setup_auto_backup ;;
+        6) log_info "Người dùng chọn: Cấu hình Google Drive"
+           bash supa-setup-gdrive.sh ;;
+        0) log_info "Người dùng thoát menu"
+           echo "Tạm biệt!"
+           exit 0
+           ;;
+        *) log_warn "Người dùng nhập lựa chọn không hợp lệ: $choice"
+           echo -e "${RED}Lựa chọn không hợp lệ.${NC}"
+           sleep 1
+           ;;
     esac
     echo ""
     read -p "Nhấn Enter để tiếp tục..." dummy
