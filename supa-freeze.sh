@@ -213,48 +213,89 @@ echo -e "${GREEN}✅ Backup thành công: $BACKUP_FILE${NC}"
 log_info "Backup thành công: $BACKUP_FILE"
 
 # ------------------------------------------------------------
-# 10. Đồng bộ sang VPS dự phòng (tự động hướng dẫn SSH key)
+# 10. Đồng bộ sang VPS dự phòng (tự động hóa SSH key, hướng dẫn chi tiết)
 # ------------------------------------------------------------
 if [ -n "$REMOTE" ]; then
-    echo "☁️ Đồng bộ sang $REMOTE..."
-    # Kiểm tra SSH key
+    echo -e "${CYAN}☁️ Đồng bộ sang $REMOTE...${NC}"
+
+    # ---------- Tạo SSH key nếu chưa có ----------
     if [ ! -f ~/.ssh/id_rsa ]; then
-        echo "🔑 Chưa có SSH key. Đang tạo cặp key mới..."
+        echo -e "${YELLOW}🔑 Chưa có SSH key. Đang tạo cặp key mới...${NC}"
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
         ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
-        echo "✅ Đã tạo SSH key tại ~/.ssh/id_rsa"
-        echo "👉 Để đồng bộ không cần mật khẩu, hãy copy public key sang VPS đích:"
-        echo "   ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
-        echo "   Bạn sẽ được hỏi mật khẩu của VPS đích MỘT LẦN duy nhất."
-        echo "   Sau đó, các lần đồng bộ sau sẽ tự động."
-        echo ""
+        echo -e "${GREEN}✅ Đã tạo SSH key tại ~/.ssh/id_rsa${NC}"
     fi
-    
-    # Kiểm tra kết nối SSH (thử lệnh đơn giản)
-    if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "${REMOTE}" 'echo "OK"' >/dev/null 2>&1; then
-        # Tạo thư mục backups trên remote nếu chưa có
-        ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'mkdir -p ~/backups' 2>/dev/null
+
+    # ---------- Yêu cầu copy public key sang VPS đích ----------
+    echo -e "${CYAN}👉 Để đồng bộ không cần mật khẩu, bạn cần copy public key sang VPS đích.${NC}"
+    echo "   Có 2 cách:"
+    echo "   1. (Tự động) Để script này tự copy giúp bạn (sẽ hỏi mật khẩu VPS đích MỘT LẦN)."
+    echo "   2. (Thủ công) Bạn tự copy bằng lệnh hoặc thêm vào file authorized_keys."
+    echo ""
+    read -p "   Bạn muốn script tự copy giúp không? (y/n): " auto_copy_ssh
+    if [ "$auto_copy_ssh" = "y" ]; then
+        echo -e "${CYAN}   Đang copy public key sang $REMOTE...${NC}"
+        echo "   Bạn hãy nhập MẬT KHẨU của VPS đích khi được hỏi."
+        if command -v ssh-copy-id >/dev/null 2>&1; then
+            if ssh-copy-id -i ~/.ssh/id_rsa.pub "$REMOTE" 2>/dev/null; then
+                echo -e "${GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
+            else
+                echo -e "${YELLOW}   ⚠️ Không thể copy tự động (có thể do chưa có ssh-copy-id hoặc sai mật khẩu).${NC}"
+                echo "   Bạn hãy làm thủ công theo hướng dẫn bên dưới..."
+            fi
+        else
+            echo -e "${YELLOW}   ⚠️ ssh-copy-id không khả dụng trên hệ thống này.${NC}"
+            echo "   Bạn hãy làm thủ công theo hướng dẫn bên dưới..."
+        fi
+    fi
+
+    # ---------- Kiểm tra kết nối SSH và tạo thư mục từ xa ----------
+    echo -e "${CYAN}   Kiểm tra kết nối SSH tới $REMOTE...${NC}"
+    if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "${REMOTE}" 'mkdir -p ~/backups && echo "OK"' >/dev/null 2>&1; then
+        echo -e "${GREEN}   ✅ Kết nối SSH thành công, đã tạo thư mục ~/backups trên VPS đích.${NC}"
+        SSH_OK=1
     else
-        echo -e "${YELLOW}⚠️ Không thể kết nối SSH tới $REMOTE.${NC}"
-        echo "   Lỗi thường gặp:"
-        echo "   - Chưa copy public key sang VPS đích (chạy lệnh ssh-copy-id ở trên)."
-        echo "   - IP hoặc user không chính xác."
-        echo "   - Firewall chặn cổng 22."
-        echo "   Sẽ thử đồng bộ bằng rsync, bạn có thể phải nhập mật khẩu."
+        echo -e "${YELLOW}   ⚠️ Không thể kết nối SSH tới $REMOTE.${NC}"
+        echo "   Rất có thể public key của bạn chưa được copy sang VPS đích."
+        echo "   Hãy thực hiện MỘT TRONG CÁC CÁCH SAU:"
+        echo ""
+        echo "   CÁCH 1 (đơn giản nhất): Chạy lệnh này trên máy hiện tại:"
+        echo "     ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
+        echo "     (Bạn sẽ được hỏi mật khẩu của VPS đích một lần)"
+        echo ""
+        echo "   CÁCH 2: Tự thêm public key thủ công:"
+        echo "     1. Copy nội dung public key của bạn (giữa hai dòng ===):"
+        echo "        ========================================"
+        cat ~/.ssh/id_rsa.pub 2>/dev/null || echo "        (Không tìm thấy public key)"
+        echo "        ========================================"
+        echo "     2. SSH vào VPS đích (bằng mật khẩu):"
+        echo "        ssh $REMOTE"
+        echo "     3. Mở file authorized_keys:"
+        echo "        nano ~/.ssh/authorized_keys"
+        echo "     4. Dán nội dung public key ở trên vào cuối file, lưu và thoát."
+        echo "     5. Thoát SSH và thử lại đồng bộ."
+        echo ""
+        echo "   Sau khi thực hiện xong, bạn có thể chạy lại chức năng Backup để đồng bộ."
+        SSH_OK=0
     fi
-    
-    # Thực hiện rsync
-    rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:~/backups/" && {
-        echo -e "${GREEN}✅ Đồng bộ thành công tới ${REMOTE}:~/backups/$(basename "$BACKUP_FILE")${NC}"
-        log_info "Đồng bộ thành công tới $REMOTE"
-        } || {
-        echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
-        log_error "Đồng bộ thất bại tới $REMOTE"
-        echo "   Vui lòng kiểm tra:"
-        echo "   - Kết nối SSH tới $REMOTE có hoạt động không?"
-        echo "   - Bạn đã copy public key sang VPS đích: ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
-        echo "   - Thư mục ~/backups có tồn tại và bạn có quyền ghi không?"
-        echo "   - Dung lượng ổ đĩa trên VPS đích còn đủ không?"
-    }
+
+    # ---------- Thực hiện rsync nếu kết nối OK ----------
+    if [ $SSH_OK -eq 1 ]; then
+        echo -e "${CYAN}   Đang đồng bộ file backup...${NC}"
+        if rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:~/backups/"; then
+            echo -e "${GREEN}✅ Đồng bộ thành công! File backup đã ở VPS đích: ~/backups/$(basename "$BACKUP_FILE")${NC}"
+            log_info "Đồng bộ thành công tới $REMOTE"
+        else
+            echo -e "${RED}❌ Đồng bộ thất bại dù SSH đã kết nối được.${NC}"
+            echo "   Kiểm tra dung lượng ổ đĩa và quyền ghi trên VPS đích."
+            log_error "Đồng bộ thất bại tới $REMOTE dù SSH đã kết nối"
+        fi
+    else
+        echo -e "${YELLOW}   Bỏ qua đồng bộ vì chưa kết nối được SSH.${NC}"
+        echo "   Bạn vẫn có thể chạy lại chức năng Backup sau khi đã thiết lập SSH key."
+        log_warn "Bỏ qua đồng bộ vì chưa kết nối được SSH"
+    fi
 fi
 
 # ------------------------------------------------------------
