@@ -88,6 +88,8 @@ C:\Users\duyph\Desktop\INTRUST\ENOTARY\fe-innotary\src\utils\LogUtils.ts
 //=======================================================================================================================
 khi được yêu cầu tạo commit mesage
 
+TẤT CẢ COMMIT PHẢI ĐƯỢC TẠO BẰNG TIẾNG ANH
+
 thì phải tạo commit message bằng tiếng Anh có các tiền tố như: fix / feat / docs
 / refactor / test / chore
 
