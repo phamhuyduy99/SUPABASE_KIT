@@ -272,17 +272,25 @@ LAST_DOCKER_ERR=""
 
 try_start() {
     local err_log="/tmp/docker_start_err_$$.log"
-    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d 2>"$err_log"
-    local ec=$?
-    if [ $ec -ne 0 ]; then
-        LAST_DOCKER_ERR=$(< "$err_log")
-        cat "$err_log"
-        rm -f "$err_log"
-        return 1
+    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d 2>"$err_log" || true
+    if [ $? -eq 0 ]; then
+        # Kiểm tra xem tất cả container có thực sự chạy không
+        local all_running=1
+        for cont in $(docker-compose -f "$TARGET_DIR/docker-compose.yml" config --services); do
+            if ! docker-compose -f "$TARGET_DIR/docker-compose.yml" ps "$cont" | grep -q "Up"; then
+                all_running=0
+                break
+            fi
+        done
+        if [ $all_running -eq 1 ]; then
+            rm -f "$err_log"
+            return 0
+        fi
     fi
+    # Lưu lỗi cuối cùng để xử lý sau
+    LAST_DOCKER_ERR=$(cat "$err_log")
     rm -f "$err_log"
-    LAST_DOCKER_ERR=""
-    return 0
+    return 1
 }
 
 # ---------- HÀM THÊM PRIVILEGED MODE ----------
@@ -388,7 +396,7 @@ else
         fi
 
         strategy=1
-        max_strategies=20
+        max_strategies=25
         SUPABASE_STARTED=0
 
         while [ $SUPABASE_STARTED -eq 0 ] && [ $strategy -le $max_strategies ]; do
@@ -654,6 +662,43 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     echo "      bạn có thể xem xét sử dụng Supabase Cloud để tránh các vấn đề về hạ tầng."
                     echo "      📞 Liên hệ chúng tôi để được hỗ trợ di chuyển lên cloud."
                     ;;
+                21)
+                    echo "      Vô hiệu hóa TẤT CẢ sysctl trong docker-compose.yml..."
+                    cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
+                    # Xóa mọi dòng chứa 'sysctls:' hoặc bắt đầu bằng '      - net.'
+                    sudo sed -i '/sysctls:/d; /^[[:space:]]*- net\./d' "$TARGET_DIR/docker-compose.yml"
+                    if is_yaml_valid; then
+                        echo "      ✅ Đã xóa tất cả cấu hình sysctl."
+                        if try_start; then SUPABASE_STARTED=1; break; fi
+                    else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
+                    fi
+                    ;;
+                22)
+                    echo "      Thử khởi động với '--no-healthcheck' và không phụ thuộc..."
+                    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps --no-healthcheck 2>/dev/null || true
+                    if try_start; then SUPABASE_STARTED=1; break; fi
+                    ;;
+                23)
+                    echo "      Thử sử dụng 'docker run' trực tiếp cho từng service..."
+                    # Lấy image của vector, imgproxy, db từ compose và chạy thủ công với privileged
+                    for svc in vector imgproxy db; do
+                        img=$(awk -v svc="$svc" '$0~"^  "svc":"{found=1} found&&/image:/{print $2; exit}' "$TARGET_DIR/docker-compose.yml")
+                        [ -n "$img" ] && docker run -d --name "supabase-$svc" --privileged "$img" 2>/dev/null || true
+                    done
+                    if try_start; then SUPABASE_STARTED=1; break; fi
+                    ;;
+                24)
+                    echo "      Đề xuất: Liên hệ nhà cung cấp VPS để sửa AppArmor/profile."
+                    echo "      Yêu cầu họ chạy: sudo aa-teardown && sudo apparmor_parser -R /etc/apparmor.d/unprivileged_userns"
+                    echo "      Hoặc thiết lập profile unconfined cho container của bạn."
+                    ;;
+                25)
+                    echo "      Giải pháp cuối cùng: Sử dụng Docker trong Docker (dind) hoặc máy ảo."
+                    echo "      📝 Bạn có thể cài đặt một máy ảo nhỏ (KVM) trong VPS hiện tại và chạy Supabase trên đó."
+                    echo "      📞 Liên hệ hỗ trợ để được hướng dẫn chi tiết."
+                    ;;
             esac
             strategy=$((strategy + 1))
         done
@@ -867,7 +912,7 @@ solve_database_import_problem() {
                     echo ""
                     echo "   💡 Bạn có thể edit file /tmp/restore.sql và chạy lại script."
                     echo "   Hoặc import thủ công bằng lệnh:"
-                    echo "   docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql"
+                    echo "   docker exec -t $DB_CONT psql -U postgres -f /tmp/\$(basename \$part)"
                     return 1
                 fi ;;
             8) 
