@@ -49,6 +49,104 @@ log_error() {
 log_info "=============================================="
 log_info "Bắt đầu phiên làm việc mới"
 
+# ---------- HỆ THỐNG XỬ LÝ LỖI TOÀN DIỆN ----------
+# Framework 10 chiến lược cho mọi vấn đề
+solve_problem() {
+    local problem_type="$1"
+    local strategy=1
+    local success=0
+    
+    while [ $strategy -le 10 ]; do
+        case $strategy in
+            1) 
+                # Chiến lược 1: Tự động kiểm tra và sửa lỗi cơ bản
+                if try_strategy_1 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            2) 
+                # Chiến lược 2: Áp dụng giải pháp thay thế tự động
+                if try_strategy_2 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            3) 
+                # Chiến lược 3: Cấu hình lại hoặc cài đặt lại thành phần liên quan
+                if try_strategy_3 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            4) 
+                # Chiến lược 4: Thử với các tùy chọn cấu hình khác
+                if try_strategy_4 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            5) 
+                # Chiến lược 5: Retry với thời gian chờ và giới hạn số lần
+                if try_strategy_5 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            6) 
+                # Chiến lược 6: Hỏi người dùng trước khi thực hiện thay đổi hệ thống
+                if try_strategy_6 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            7) 
+                # Chiến lược 7: Đưa ra lựa chọn thay thế và hỏi xác nhận
+                if try_strategy_7 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            8) 
+                # Chiến lược 8: Đề xuất giải pháp bán tự động với hướng dẫn chi tiết
+                if try_strategy_8 "$problem_type"; then
+                    success=1
+                    break
+                fi ;;
+            9) 
+                # Chiến lược 9: Hướng dẫn thủ công chi tiết từng bước
+                echo -e "${YELLOW}📋 Hướng dẫn thủ công cho vấn đề '$problem_type':${NC}"
+                provide_manual_guide_9 "$problem_type"
+                read -p "Bạn đã thực hiện theo hướng dẫn chưa? (y/n): " manual_done
+                if [ "$manual_done" = "y" ]; then
+                    success=1
+                    break
+                fi ;;
+            10) 
+                # Chiến lược 10: Hướng dẫn cuối cùng và liên hệ hỗ trợ
+                echo -e "${RED}❌ Đã thử tất cả các chiến lược nhưng vẫn không khắc phục được.${NC}"
+                echo -e "${MAGENTA}📌 Hướng dẫn cuối cùng cho vấn đề '$problem_type':${NC}"
+                provide_final_guide_10 "$problem_type"
+                echo ""
+                echo -e "${CYAN}💡 Bạn có thể liên hệ hỗ trợ kỹ thuật hoặc tham khảo tài liệu chi tiết.${NC}"
+                return 1 ;;
+        esac
+        strategy=$((strategy + 1))
+    done
+    
+    if [ $success -eq 1 ]; then
+        echo -e "${GREEN}✅ Vấn đề '$problem_type' đã được giải quyết thành công!${NC}"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Các hàm placeholder cho từng chiến lược - sẽ được triển khai cụ thể trong từng script
+try_strategy_1() { return 1; }
+try_strategy_2() { return 1; }
+try_strategy_3() { return 1; }
+try_strategy_4() { return 1; }
+try_strategy_5() { return 1; }
+try_strategy_6() { return 1; }
+try_strategy_7() { return 1; }
+try_strategy_8() { return 1; }
+provide_manual_guide_9() { echo "Hướng dẫn thủ công cho $1"; }
+provide_final_guide_10() { echo "Hướng dẫn cuối cùng cho $1"; }
+
 # ---------- PHÁT HIỆN DOCKER COMPOSE ----------
 detect_docker_compose() {
     if docker compose version &>/dev/null 2>&1; then
