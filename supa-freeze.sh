@@ -146,7 +146,10 @@ cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/" 2>/dev/null
 # 6. Sao lưu cấu hình (bỏ qua db/data để tránh lỗi permission)
 # ------------------------------------------------------------
 echo -e "${BOLD}1/4 Sao lưu cấu hình...${NC}"
-cp "$PROJECT_DIR/.env" "$PACK_DIR/backup_data/config/" || { echo -e "${RED}❌ Không thể copy .env.${NC}"; exit 1; }
+if ! cp "$PROJECT_DIR/.env" "$PACK_DIR/backup_data/config/"; then
+    echo -e "${RED}❌ Không thể copy .env.${NC}"
+    exit 1
+fi
 cp "$PROJECT_DIR/docker-compose.yml" "$PACK_DIR/backup_data/config/"
 
 if [ -d "$PROJECT_DIR/volumes" ]; then
@@ -179,6 +182,7 @@ if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$PACK_DIR/backup_
     echo -e "   -> Database đã được dump thành công."
 else
     echo -e "${RED}❌ Có lỗi khi dump database (kiểm tra kết nối hoặc dung lượng).${NC}"
+    log_info "Lỗi khi dump database"
     # Trap sẽ xử lý việc xóa TMP_ROOT, nhưng exit ngay để tránh các bước sau
     exit 1
 fi
@@ -226,7 +230,10 @@ if [ -n "$REMOTE" ]; then
         echo -e "${YELLOW}🔑 Chưa có SSH key. Đang tạo cặp key mới...${NC}"
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
-        ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
+        if ! ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q; then
+            echo -e "${RED}❌ Tạo SSH key thất bại.${NC}"
+            exit 1
+        fi
         echo -e "${GREEN}✅ Đã tạo SSH key tại ~/.ssh/id_rsa${NC}"
     fi
 
@@ -310,7 +317,7 @@ if [ -n "$REMOTE" ]; then
                             success=1
                             break
                         else
-                            echo "   ❌ Kết nối SSH vẫn thất bại."
+                            echo -e "${RED}   ❌ Kết nối SSH vẫn thất bại.${NC}"
                         fi
                     fi
                 elif [ "$strategy" -eq 4 ]; then
@@ -552,6 +559,7 @@ EXTRACTEOF
             echo -e "   📜 Script giải nén: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")/supa-extract-backup.sh"
         else
             echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
+            log_info "Đồng bộ sang VPS dự phòng thất bại"
             echo "   Bạn có thể thử tự copy thư mục bằng lệnh scp:"
             echo "   scp -r $PACKAGE_DIR ${REMOTE}:${DEST_PARENT}/"
         fi

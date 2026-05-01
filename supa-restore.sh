@@ -413,7 +413,7 @@ else
                             echo "      ✅ Đã xóa dòng sysctl."
                             if try_start; then SUPABASE_STARTED=1; break; fi
                         else
-                            echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                            echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                             cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                         fi
                     else
@@ -441,7 +441,7 @@ else
                         echo "      ✅ Đã thêm privileged: true."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -474,7 +474,7 @@ else
                     if is_yaml_valid; then
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -511,7 +511,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                                 sleep 5
                                 if try_start; then SUPABASE_STARTED=1; break; fi
                             else
-                                echo "      ❌ Hạ cấp containerd thất bại, tiếp tục chiến lược khác."
+                                echo -e "   ${RED}❌ Hạ cấp containerd thất bại, tiếp tục chiến lược khác.${NC}"
                             fi
                         fi
                     else
@@ -526,7 +526,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                         echo "      ✅ Đã đổi tag image."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -575,7 +575,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     if is_yaml_valid; then
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;

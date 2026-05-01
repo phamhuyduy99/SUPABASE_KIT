@@ -620,10 +620,10 @@ download_from_gdrive() {
                                 success=1
                                 break
                             else
-                                echo "   ❌ Tải từ URL thất bại."
+                                echo -e "   ${RED}❌ Tải từ URL thất bại.${NC}"
                             fi
                         else
-                            echo "   ❌ Đường dẫn không hợp lệ."
+                            echo -e "   ${RED}❌ Đường dẫn không hợp lệ.${NC}"
                         fi
                     else
                         echo "   ℹ️ Bỏ qua nhập đường dẫn thay thế."
