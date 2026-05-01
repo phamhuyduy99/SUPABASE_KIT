@@ -362,6 +362,12 @@ else
         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
         docker ps -a --filter "name=supabase" -q | xargs -r docker rm -f 2>/dev/null || true
 
+        # Tự động sao lưu file docker-compose.yml gốc trước khi sửa đổi
+        if [ ! -f "$TARGET_DIR/docker-compose.yml.original" ]; then
+            cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.original"
+            echo "   💾 Đã sao lưu file gốc: $TARGET_DIR/docker-compose.yml.original"
+        fi
+
         # Triển khai 10 chiến lược cho vấn đề sysctl
         solve_sysctl_problem() {
             local strategy=1
@@ -422,16 +428,17 @@ else
                             echo "   ℹ️ Tất cả service đã có privileged: true."
                         fi ;;
                     3) 
-                        # Chiến lược 3: Thêm security_opt và cap_add
+                        # Chiến lược 3: Thêm security_opt và cap_add (chỉ khi chưa có)
                         echo "   🔧 Chiến lược 3/10: Đang thêm security_opt và cap_add..."
                         local modified=0
                         SERVICES_TO_FIX="vector imgproxy db"
                         for svc in $SERVICES_TO_FIX; do
                             if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
+                                # Kiểm tra kỹ xem service đã có security_opt hoặc cap_add chưa
                                 if ! awk -v svc="$svc" '
                                     $0 ~ "^  " svc ":" { found=1; next }
                                     found && /^  [a-zA-Z]/ { found=0 }
-                                    found && /^    security_opt:/ { exit 0 }
+                                    found && (/^    security_opt:/ || /^    cap_add:/) { exit 0 }
                                     END { exit 1 }
                                 ' "$TARGET_DIR/docker-compose.yml"; then
                                     local tmp_file=$(mktemp)
@@ -451,17 +458,20 @@ else
                                     ' "$TARGET_DIR/docker-compose.yml" | sudo tee "$tmp_file" > /dev/null
                                     sudo mv "$tmp_file" "$TARGET_DIR/docker-compose.yml"
                                     modified=1
+                                    echo "   ✅ Đã thêm security_opt và cap_add cho service '$svc'"
+                                else
+                                    echo "   ℹ️ Service '$svc' đã có security_opt hoặc cap_add, bỏ qua."
                                 fi
                             fi
                         done
                         if [ $modified -eq 1 ]; then
-                            echo "   ✅ Đã thêm security_opt và cap_add."
+                            echo "   🔄 Đang thử khởi động lại với security_opt và cap_add..."
                             if try_start; then
                                 success=1
                                 break
                             fi
                         else
-                            echo "   ℹ️ Tất cả service đã có security_opt."
+                            echo "   ℹ️ Tất cả service đã có cấu hình security_opt/cap_add."
                         fi ;;
                     4) 
                         # Chiến lược 4: Cấu hình Docker daemon (hỏi người dùng)
