@@ -355,50 +355,56 @@ if try_start; then
 else
     echo -e "${YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
 
-    # ----- XỬ LÝ LỖI SYSCTL (hạ cấp containerd nếu cần) -----
+    # ----- XỬ LÝ LỖI SYSCTL (tự động cấu hình lại Docker) -----
     if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
         echo "   🔍 Phát hiện lỗi sysctl do môi trường ảo hóa LXC/OpenVZ."
         echo "   🧹 Đang dừng mọi container liên quan đến Supabase..."
         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
         docker ps -a --filter "name=supabase" -q | xargs -r docker rm -f 2>/dev/null || true
 
-        # Kiểm tra phiên bản containerd
-        echo "   🔍 Đang kiểm tra phiên bản containerd..."
-        CONTAINERD_VERSION=$(containerd --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
-        echo "   📋 Phiên bản containerd hiện tại: $CONTAINERD_VERSION"
+        echo "   📌 Giải pháp cuối cùng: tắt sysctl trong Docker daemon."
+        echo "   Hành động này cần quyền sudo và sẽ khởi động lại Docker (làm gián đoạn các container khác)."
+        read -p "   👉 Bạn có muốn tiếp tục không? (y/n): " fix_docker
+        if [ "$fix_docker" = "y" ]; then
+            echo "   🔧 Đang cấu hình Docker..."
+            # Tạo file /etc/docker/daemon.json nếu chưa có
+            if [ ! -f /etc/docker/daemon.json ]; then
+                echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null
+            fi
+            # Sử dụng python để sửa JSON an toàn (có sẵn trên Ubuntu)
+            sudo python3 -c "
+import json
+config = {}
+try:
+    with open('/etc/docker/daemon.json') as f:
+        config = json.load(f)
+except:
+    pass
+config['default-ulimits'] = {'nofile': {'Hard': 65536, 'Name': 'nofile', 'Soft': 65536}}
+with open('/etc/docker/daemon.json', 'w') as f:
+    json.dump(config, f, indent=4)
+"
+            echo "   ✅ Đã cấu hình Docker để vô hiệu hóa sysctl."
+            echo "   🔄 Đang khởi động lại Docker..."
+            sudo systemctl restart docker
+            sleep 5
 
-        # Phiên bản có bug: 1.7.28-2 trở lên trên Ubuntu 22.04
-        MIN_BUGGY_VERSION="1.7.28"
-        if dpkg --compare-versions "$CONTAINERD_VERSION" ge "$MIN_BUGGY_VERSION"; then
-            echo -e "${YELLOW}   ⚠️ Phát hiện containerd phiên bản $CONTAINERD_VERSION có thể gây lỗi sysctl.${NC}"
-            echo "   📌 Giải pháp: hạ cấp containerd xuống phiên bản 1.7.28-1 (ổn định cho LXC/OpenVZ)."
-            echo "   Hành động này cần quyền sudo và sẽ tải về khoảng 30MB."
-            read -p "   👉 Bạn có muốn tự động hạ cấp containerd không? (y/n): " downgrade
-            if [ "$downgrade" = "y" ]; then
-                echo "   🔧 Đang hạ cấp containerd..."
-                if sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null; then
-                    echo -e "${GREEN}   ✅ Hạ cấp containerd thành công.${NC}"
-                    sudo apt-mark hold containerd.io 2>/dev/null
-                    echo "   🔄 Đang thử khởi động lại..."
-                    if try_start; then
-                        echo -e "${GREEN}✅ Supabase đã khởi động thành công sau khi hạ cấp containerd.${NC}"
-                        SUPABASE_STARTED=1
-                    else
-                        echo -e "${RED}❌ Vẫn không thể khởi động.${NC}"
-                        echo "   📋 Lỗi mới:"
-                        echo "$LAST_DOCKER_ERR"
-                    fi
-                else
-                    echo -e "${RED}❌ Hạ cấp containerd thất bại. Có thể phiên bản không khả dụng.${NC}"
-                    echo "   Bạn có thể thử cài thủ công:"
-                    echo "   sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble"
-                fi
+            echo "   🔄 Đang thử khởi động lại Supabase..."
+            if try_start; then
+                echo -e "${GREEN}✅ Supabase đã khởi động thành công!${NC}"
+                SUPABASE_STARTED=1
             else
-                echo "   ℹ️ Bạn có thể tự hạ cấp containerd sau và chạy lại script."
+                echo -e "${RED}❌ Vẫn không thể khởi động.${NC}"
+                echo "   📋 Lỗi mới:"
+                echo "$LAST_DOCKER_ERR"
+                echo ""
+                echo "   👉 Bạn có thể thử liên hệ nhà cung cấp VPS để bật 'nesting' hoặc dùng VPS KVM."
             fi
         else
-            echo "   ℹ️ Phiên bản containerd hiện tại không nằm trong diện bị ảnh hưởng."
-            echo "   👉 Thử thêm 'privileged: true' vào các service vector, imgproxy, db trong docker-compose.yml rồi chạy lại."
+            echo "   ℹ️ Bạn có thể tự cấu hình Docker sau và chạy lại script."
+            echo "   📝 Để tắt sysctl, thêm dòng sau vào /etc/docker/daemon.json:"
+            echo '      "default-ulimits": {"nofile": {"Hard": 65536, "Name": "nofile", "Soft": 65536}}'
+            echo "   Sau đó chạy: sudo systemctl restart docker"
         fi
         SUPABASE_STARTED=${SUPABASE_STARTED:-0}
     # ----- XỬ LÝ CÁC LỖI KHÁC -----
