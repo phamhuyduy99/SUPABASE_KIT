@@ -357,6 +357,8 @@ else
 
     # ----- XỬ LÝ LỖI SYSCTL VỚI 20 CHIẾN LƯỢC & TỰ ĐỘNG KHÔI PHỤC FILE -----
     if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
+        # Tạm thời tắt set -e để các chiến lược không làm script thoát đột ngột
+        set +e
         echo "   🔍 Phát hiện lỗi sysctl do môi trường ảo hóa LXC/OpenVZ."
         echo "   🧹 Đang dừng mọi container liên quan đến Supabase..."
         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
@@ -503,10 +505,14 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                         echo -e "${YELLOW}      Phiên bản containerd $CONTAINERD_VERSION có thể gây lỗi.${NC}"
                         read -p "      👉 Hạ cấp? (y/n): " ans
                         if [ "$ans" = "y" ]; then
-                            sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null
-                            sudo systemctl restart docker
-                            sleep 5
-                            if try_start; then SUPABASE_STARTED=1; break; fi
+                            if sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null; then
+                                echo "      ✅ Hạ cấp containerd thành công."
+                                sudo systemctl restart docker
+                                sleep 5
+                                if try_start; then SUPABASE_STARTED=1; break; fi
+                            else
+                                echo "      ❌ Hạ cấp containerd thất bại, tiếp tục chiến lược khác."
+                            fi
                         fi
                     else
                         echo "      ℹ️ Phiên bản containerd không cần hạ cấp."
@@ -655,6 +661,8 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
         if [ $SUPABASE_STARTED -eq 0 ]; then
             echo -e "${RED}❌ Đã thử $max_strategies chiến lược nhưng vẫn không khắc phục được.${NC}"
         fi
+        # Bật lại set -e sau khi đã xử lý xong sysctl
+        set -e
     # ----- XỬ LÝ CÁC LỖI KHÁC -----
     elif echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
         echo -e "${RED}❌ Hết dung lượng ổ đĩa.${NC}"
