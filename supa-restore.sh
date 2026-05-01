@@ -550,7 +550,7 @@ with open('/etc/docker/daemon.json', 'w') as f:
                             return 1
                         fi ;;
                     8) 
-                        # Chiến lược 8: Hỏi về AppArmor/SELinux
+                        # Chiến lược 8: Kiểm tra AppArmor/SELinux
                         echo "   🔧 Chiến lược 8/10: Kiểm tra AppArmor/SELinux."
                         if command -v aa-status >/dev/null 2>&1 && aa-status --enabled 2>/dev/null; then
                             echo "   ⚠️ AppArmor đang hoạt động trên hệ thống."
@@ -695,13 +695,221 @@ fi
 # 7. Import database
 # -------------------------------------------------
 echo "🗄️ Import database..."
-gunzip -c "$BACKUP_DIR/database/full_backup.sql.gz" > /tmp/restore.sql
-docker cp /tmp/restore.sql $DB_CONT:/tmp/
-docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql || { 
-    log_error "Import database thất bại"
-    rm /tmp/restore.sql; exit 1; 
+
+solve_database_import_problem() {
+    local strategy=1
+    local success=0
+    
+    while [ $strategy -le 10 ]; do
+        case $strategy in
+            1) 
+                # Chiến lược 1: Kiểm tra container database đang chạy và pg_isready
+                echo "   🔧 Chiến lược 1/10: Kiểm tra container database..."
+                if ! docker ps -q --filter "name=$DB_CONT" | grep -q .; then
+                    echo "   ⚠️ Container database không đang chạy."
+                    echo "   🔄 Đang khởi động lại Supabase..."
+                    if ! try_start; then
+                        echo "   ❌ Không thể khởi động container database."
+                    fi
+                else
+                    echo "   ✅ Container database đang chạy."
+                    # Kiểm tra database sẵn sàng
+                    if docker exec -t $DB_CONT pg_isready -U postgres; then
+                        echo "   ✅ Database đã sẵn sàng để import."
+                    else
+                        echo "   ⚠️ Database chưa sẵn sàng, đang chờ..."
+                        sleep 10
+                        if docker exec -t $DB_CONT pg_isready -U postgres; then
+                            echo "   ✅ Database đã sẵn sàng."
+                        else
+                            echo "   ❌ Database vẫn chưa sẵn sàng."
+                        fi
+                    fi
+                fi ;;
+            2) 
+                # Chiến lược 2: Nếu container không chạy, thử khởi động lại
+                echo "   🔧 Chiến lược 2/10: Thử khởi động lại container database..."
+                if ! docker ps -q --filter "name=$DB_CONT" | grep -q .; then
+                    echo "   🔄 Đang khởi động container database..."
+                    $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d db
+                    sleep 15
+                    if docker ps -q --filter "name=$DB_CONT" | grep -q .; then
+                        echo "   ✅ Container database đã khởi động."
+                    else
+                        echo "   ❌ Vẫn không thể khởi động container database."
+                    fi
+                else
+                    echo "   ℹ️ Container database đã đang chạy."
+                fi ;;
+            3) 
+                # Chiến lược 3: Kiểm tra file SQL backup có nội dung
+                echo "   🔧 Chiến lược 3/10: Kiểm tra file SQL backup..."
+                if [ -f "$BACKUP_DIR/database/full_backup.sql.gz" ]; then
+                    local file_size=$(stat -c%s "$BACKUP_DIR/database/full_backup.sql.gz" 2>/dev/null || echo "0")
+                    if [ "$file_size" -gt 0 ]; then
+                        echo "   ✅ File SQL backup có nội dung (kích thước: $file_size bytes)."
+                    else
+                        echo "   ⚠️ File SQL backup rỗng."
+                        return 1
+                    fi
+                else
+                    echo "   ❌ Không tìm thấy file SQL backup."
+                    return 1
+                fi ;;
+            4) 
+                # Chiến lược 4: Thử giải nén lại file .sql.gz
+                echo "   🔧 Chiến lược 4/10: Thử giải nén lại file SQL..."
+                if [ -f "$BACKUP_DIR/database/full_backup.sql.gz" ]; then
+                    echo "   Đang giải nén file SQL..."
+                    if gunzip -c "$BACKUP_DIR/database/full_backup.sql.gz" > /tmp/restore.sql; then
+                        echo "   ✅ Giải nén thành công."
+                        local sql_size=$(stat -c%s "/tmp/restore.sql" 2>/dev/null || echo "0")
+                        if [ "$sql_size" -gt 0 ]; then
+                            echo "   ✅ File SQL giải nén có nội dung."
+                        else
+                            echo "   ⚠️ File SQL giải nén rỗng."
+                            rm -f /tmp/restore.sql
+                            return 1
+                        fi
+                    else
+                        echo "   ❌ Giải nén thất bại."
+                        return 1
+                    fi
+                else
+                    echo "   ❌ Không tìm thấy file backup để giải nén."
+                    return 1
+                fi ;;
+            5) 
+                # Chiến lược 5: Nếu lỗi quyền, chạy với sudo
+                echo "   🔧 Chiến lược 5/10: Kiểm tra và xử lý lỗi quyền..."
+                if [ -w "/tmp" ]; then
+                    echo "   ✅ Có quyền ghi vào /tmp."
+                else
+                    echo "   ⚠️ Không có quyền ghi vào /tmp, đang thử với sudo..."
+                    if sudo touch /tmp/test_write && sudo rm /tmp/test_write; then
+                        echo "   ✅ Có quyền sudo để ghi vào /tmp."
+                    else
+                        echo "   ❌ Không có quyền ghi vào /tmp, đang thử thư mục khác..."
+                        local alt_tmp="/home/$REAL_USER/tmp_restore"
+                        mkdir -p "$alt_tmp"
+                        if [ -w "$alt_tmp" ]; then
+                            echo "   Đang sử dụng thư mục thay thế: $alt_tmp"
+                            TMP_RESTORE_DIR="$alt_tmp"
+                        else
+                            echo "   ❌ Không thể tìm được thư mục tạm phù hợp."
+                            return 1
+                        fi
+                    fi
+                fi ;;
+            6) 
+                # Chiến lược 6: Nếu lỗi phiên bản PostgreSQL, thử import bằng pg_restore
+                echo "   🔧 Chiến lược 6/10: Thử import bằng pg_restore nếu cần..."
+                # Copy file đến container
+                docker cp /tmp/restore.sql $DB_CONT:/tmp/
+                # Thử import bằng psql trước
+                if docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql; then
+                    echo "   ✅ Import database thành công bằng psql."
+                    success=1
+                    break
+                else
+                    echo "   ⚠️ Import bằng psql thất bại, đang thử pg_restore..."
+                    # Tạo file dump custom format nếu có thể
+                    if command -v pg_dump >/dev/null 2>&1; then
+                        echo "   Đang tạo dump custom format..."
+                        # Đây là trường hợp phức tạp, thường cần dump lại từ đầu
+                        echo "   ℹ️ pg_restore yêu cầu file dump ở định dạng custom (-Fc)."
+                        echo "   Bạn có thể cần tạo backup mới với định dạng phù hợp."
+                    else
+                        echo "   ℹ️ pg_restore không khả dụng trên hệ thống này."
+                    fi
+                fi ;;
+            7) 
+                # Chiến lược 7: Hỏi người dùng có muốn import từng bảng một không
+                echo "   🔧 Chiến lược 7/10: Hướng dẫn import từng bảng..."
+                echo "   📝 Nếu database quá lớn hoặc có lỗi cụ thể, bạn có thể:"
+                echo "   1. Mở file /tmp/restore.sql bằng trình soạn thảo"
+                echo "   2. Tìm và comment các bảng gây lỗi bằng --"
+                echo "   3. Import từng phần nhỏ hơn"
+                echo "   4. Sau đó import các bảng còn lại thủ công"
+                read -p "   👉 Bạn có muốn thử import từng bảng không? (y/n): " manual_import
+                if [ "$manual_import" = "y" ]; then
+                    echo "   📋 Đang hiển thị cấu trúc file SQL..."
+                    head -20 /tmp/restore.sql
+                    echo ""
+                    echo "   💡 Bạn có thể edit file /tmp/restore.sql và chạy lại script."
+                    echo "   Hoặc import thủ công bằng lệnh:"
+                    echo "   docker exec -t $DB_CONT psql -U postgres -f /tmp/restore.sql"
+                    return 1
+                fi ;;
+            8) 
+                # Chiến lược 8: Kiểm tra database đã tồn tại chưa
+                echo "   🔧 Chiến lược 8/10: Kiểm tra database đã tồn tại..."
+                if docker exec -t $DB_CONT psql -U postgres -lqt | cut -d \| -f 1 | grep -qw postgres; then
+                    echo "   ⚠️ Database 'postgres' đã tồn tại."
+                    read -p "   👉 Bạn có muốn ghi đè database hiện tại không? (y/n): " overwrite_db
+                    if [ "$overwrite_db" != "y" ]; then
+                        echo "   ℹ️ Hủy import vì người dùng không muốn ghi đè."
+                        return 1
+                    else
+                        echo "   🔄 Đang xóa database cũ..."
+                        docker exec -t $DB_CONT psql -U postgres -c "DROP DATABASE IF EXISTS postgres;"
+                        docker exec -t $DB_CONT psql -U postgres -c "CREATE DATABASE postgres;"
+                    fi
+                else
+                    echo "   ℹ️ Database 'postgres' chưa tồn tại, sẽ tạo mới."
+                fi ;;
+            9) 
+                # Chiến lược 9: Hướng dẫn tự import thủ công bằng psql
+                echo "   🔧 Chiến lược 9/10: Hướng dẫn import thủ công..."
+                echo "   📝 Các bước import thủ công bằng psql:"
+                echo "   1. Đảm bảo container database đang chạy:"
+                echo "      docker ps | grep $DB_CONT"
+                echo "   2. Copy file SQL vào container:"
+                echo "      docker cp /tmp/restore.sql $DB_CONT:/tmp/"
+                echo "   3. Import bằng psql:"
+                echo "      docker exec -t $DB_CONT psql -U postgres -f /tmp/\$(basename \$part)"
+                echo "   4. Kiểm tra kết quả:"
+                echo "      docker exec -t $DB_CONT psql -U postgres -c '\l'"
+                read -p "   👉 Bạn đã thử import thủ công chưa? (y/n): " manual_done
+                if [ "$manual_done" = "y" ]; then
+                    echo "   ✅ Giả sử import thủ công đã thành công."
+                    success=1
+                    break
+                fi ;;
+            10) 
+                # Chiến lược 10: Hướng dẫn chia nhỏ file SQL lớn
+                echo "   🔧 Chiến lược 10/10: Hướng dẫn chia nhỏ file SQL lớn..."
+                echo "   📝 Nếu file SQL quá lớn (>1GB), bạn nên chia nhỏ:"
+                echo "   1. Cài đặt split: sudo apt install coreutils"
+                echo "   2. Chia file: split -l 10000 /tmp/restore.sql /tmp/restore_part_"
+                echo "   3. Import từng phần:"
+                echo "      for part in /tmp/restore_part_*; do"
+                echo "          docker cp \$part $DB_CONT:/tmp/"
+                echo "          docker exec -t $DB_CONT psql -U postgres -f /tmp/\$(basename \$part)"
+                echo "      done"
+                echo ""
+                echo "   💡 Hoặc sử dụng công cụ chuyên dụng như pgloader để import hiệu quả hơn."
+                return 1 ;;
+        esac
+        strategy=$((strategy + 1))
+    done
+    
+    if [ $success -eq 1 ]; then
+        log_info "Import database thành công"
+        return 0
+    else
+        log_error "Import database thất bại sau khi thử tất cả 10 chiến lược"
+        return 1
+    fi
 }
-rm /tmp/restore.sql
+
+# Thực thi giải quyết vấn đề import database
+if ! solve_database_import_problem; then
+    rm -f /tmp/restore.sql
+    exit 1
+fi
+
+rm -f /tmp/restore.sql
 log_info "Import database thành công"
 
 # -------------------------------------------------

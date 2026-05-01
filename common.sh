@@ -471,26 +471,206 @@ download_from_gdrive() {
     local remote_path=$1
     local local_path=$2
 
-    echo -e "${YELLOW}📥 Chuẩn bị tải từ Google Drive...${NC}"
-    if ! check_gdrive_connection; then
-        suggest_gdrive_reconnect
-        if ! check_gdrive_connection; then
-            echo -e "${RED}Hủy tải vì chưa kết nối được Google Drive.${NC}"
+    # Hàm giải quyết vấn đề tải file từ Google Drive với 10 chiến lược
+    solve_gdrive_download_problem() {
+        local strategy=1
+        local success=0
+        
+        while [ $strategy -le 10 ]; do
+            case $strategy in
+                1) 
+                    # Chiến lược 1: Kiểm tra rclone đã cài chưa, nếu chưa thì cài đặt
+                    echo "   🔧 Chiến lược 1/10: Kiểm tra và cài đặt rclone nếu cần..."
+                    if ! command -v rclone >/dev/null 2>&1; then
+                        echo "   ⚠️ Rclone chưa được cài đặt."
+                        read -p "   👉 Bạn có muốn cài đặt rclone không? (y/n): " install_rclone
+                        if [ "$install_rclone" = "y" ]; then
+                            if sudo apt update && sudo apt install -y rclone; then
+                                echo "   ✅ Đã cài đặt rclone thành công."
+                            else
+                                echo "   ❌ Cài đặt rclone thất bại."
+                            fi
+                        fi
+                    else
+                        echo "   ℹ️ Rclone đã được cài đặt."
+                    fi ;;
+                2) 
+                    # Chiến lược 2: Kiểm tra remote gdrive đã cấu hình chưa
+                    echo "   🔧 Chiến lược 2/10: Kiểm tra cấu hình remote gdrive..."
+                    if ! rclone listremotes | grep -q "gdrive:"; then
+                        echo "   ⚠️ Remote 'gdrive' chưa được cấu hình."
+                        echo "   📝 Đang chạy script cấu hình Google Drive..."
+                        if [ -f "./supa-setup-gdrive.sh" ]; then
+                            bash ./supa-setup-gdrive.sh
+                        else
+                            echo "   ❌ Không tìm thấy script supa-setup-gdrive.sh."
+                            suggest_gdrive_reconnect
+                        fi
+                    else
+                        echo "   ✅ Remote 'gdrive' đã được cấu hình."
+                    fi ;;
+                3) 
+                    # Chiến lược 3: Kiểm tra token hết hạn
+                    echo "   🔧 Chiến lược 3/10: Kiểm tra token Google Drive..."
+                    if ! check_gdrive_connection; then
+                        echo "   ⚠️ Token Google Drive có thể đã hết hạn."
+                        suggest_gdrive_reconnect
+                        if check_gdrive_connection; then
+                            echo "   ✅ Token đã được làm mới thành công."
+                        else
+                            echo "   ℹ️ Vui lòng tự tạo token mới theo hướng dẫn trên."
+                        fi
+                    else
+                        echo "   ✅ Token Google Drive vẫn hợp lệ."
+                    fi ;;
+                4) 
+                    # Chiến lược 4: Thử tải lại với retry
+                    echo "   🔧 Chiến lược 4/10: Thử tải lại với retry (tối đa 3 lần)..."
+                    local retry_count=0
+                    local max_retries=3
+                    while [ $retry_count -lt $max_retries ]; do
+                        echo "   🔄 Lần thử thứ $((retry_count + 1))..."
+                        if rclone copy "$remote_path" "$local_path" --progress; then
+                            echo "   ✅ Tải thành công sau $((retry_count + 1)) lần thử."
+                            success=1
+                            break 2  # Thoát khỏi cả vòng lặp while bên ngoài
+                        else
+                            retry_count=$((retry_count + 1))
+                            sleep 5
+                        fi
+                    done
+                    if [ $success -eq 0 ]; then
+                        echo "   ❌ Tải thất bại sau $max_retries lần thử."
+                    fi ;;
+                5) 
+                    # Chiến lược 5: Kiểm tra file tải về
+                    echo "   🔧 Chiến lược 5/10: Kiểm tra file tải về..."
+                    if [ -f "$local_path" ]; then
+                        local file_size=$(stat -c%s "$local_path" 2>/dev/null || echo "0")
+                        if [ "$file_size" -eq 0 ]; then
+                            echo "   ⚠️ File tải về rỗng, đang xóa và thử lại..."
+                            rm -f "$local_path"
+                            # Thử tải lại một lần nữa
+                            if rclone copy "$remote_path" "$local_path" --progress; then
+                                echo "   ✅ Tải lại thành công."
+                                success=1
+                                break
+                            fi
+                        elif [[ "$local_path" == *.tar.gz ]] && ! tar -tzf "$local_path" >/dev/null 2>&1; then
+                            echo "   ⚠️ File không đúng định dạng tar.gz, đang xóa và thử lại..."
+                            rm -f "$local_path"
+                            if rclone copy "$remote_path" "$local_path" --progress; then
+                                echo "   ✅ Tải lại thành công."
+                                success=1
+                                break
+                            fi
+                        else
+                            echo "   ✅ File tải về hợp lệ."
+                            success=1
+                            break
+                        fi
+                    else
+                        echo "   ℹ️ File chưa được tải về."
+                    fi ;;
+                6) 
+                    # Chiến lược 6: Kiểm tra dung lượng ổ đĩa
+                    echo "   🔧 Chiến lược 6/10: Kiểm tra dung lượng ổ đĩa..."
+                    local required_space_mb=1000  # Cần ít nhất 1GB
+                    if check_disk_space $required_space_mb "."; then
+                        echo "   ✅ Đủ dung lượng để tải file."
+                    else
+                        echo "   ⚠️ Không đủ dung lượng đĩa để tải file."
+                        echo "   📝 Vui lòng giải phóng ít nhất ${required_space_mb}MB dung lượng."
+                        return 1
+                    fi ;;
+                7) 
+                    # Chiến lược 7: Hướng dẫn xử lý lỗi mạng
+                    echo "   🔧 Chiến lược 7/10: Hướng dẫn xử lý lỗi mạng..."
+                    echo "   📝 Nếu gặp lỗi mạng khi tải từ Google Drive:"
+                    echo "   1. Thử đổi DNS sang 8.8.8.8 hoặc 1.1.1.1"
+                    echo "   2. Nếu đang dùng proxy, hãy cấu hình rclone sử dụng proxy:"
+                    echo "      rclone config edit gdrive"
+                    echo "      Thêm dòng: http_proxy = http://proxy_host:proxy_port"
+                    echo "   3. Thử tải vào thời điểm khác khi mạng ổn định hơn"
+                    read -p "   👉 Bạn đã thử các giải pháp trên chưa? (y/n): " network_fixed
+                    if [ "$network_fixed" = "y" ]; then
+                        echo "   🔄 Đang thử tải lại..."
+                        if rclone copy "$remote_path" "$local_path" --progress; then
+                            echo "   ✅ Tải thành công."
+                            success=1
+                            break
+                        fi
+                    fi ;;
+                8) 
+                    # Chiến lược 8: Cho phép nhập URL/file local thay thế
+                    echo "   🔧 Chiến lược 8/10: Nhập đường dẫn thay thế..."
+                    echo "   📝 Bạn có thể sử dụng file backup từ nguồn khác:"
+                    read -p "   👉 Nhập đường dẫn file local hoặc URL khác (Enter để bỏ qua): " alt_path
+                    if [ -n "$alt_path" ]; then
+                        if [ -f "$alt_path" ]; then
+                            echo "   Đang sao chép file local..."
+                            cp "$alt_path" "$local_path"
+                            echo "   ✅ Đã sao chép file thành công."
+                            success=1
+                            break
+                        elif [[ "$alt_path" == http* ]]; then
+                            echo "   Đang tải từ URL..."
+                            if wget -O "$local_path" "$alt_path"; then
+                                echo "   ✅ Đã tải từ URL thành công."
+                                success=1
+                                break
+                            else
+                                echo "   ❌ Tải từ URL thất bại."
+                            fi
+                        else
+                            echo "   ❌ Đường dẫn không hợp lệ."
+                        fi
+                    else
+                        echo "   ℹ️ Bỏ qua nhập đường dẫn thay thế."
+                    fi ;;
+                9) 
+                    # Chiến lược 9: Hướng dẫn tải thủ công
+                    echo "   🔧 Chiến lược 9/10: Hướng dẫn tải thủ công từ Google Drive web..."
+                    echo "   📝 Các bước tải thủ công:"
+                    echo "   1. Truy cập Google Drive và tìm file backup"
+                    echo "   2. Tải file về máy tính cá nhân của bạn"
+                    echo "   3. Upload file lên VPS bằng lệnh sau:"
+                    echo "      scp /đường/dẫn/local/file.tar.gz $REAL_USER@$(hostname):$local_path"
+                    echo "   4. Sau khi upload xong, chạy lại script này"
+                    read -p "   👉 Bạn đã upload file thủ công chưa? (y/n): " manual_upload
+                    if [ "$manual_upload" = "y" ] && [ -f "$local_path" ]; then
+                        echo "   ✅ Xác nhận file đã được upload."
+                        success=1
+                        break
+                    fi ;;
+                10) 
+                    # Chiến lược 10: Kiểm tra checksum SHA256
+                    echo "   🔧 Chiến lược 10/10: Kiểm tra checksum SHA256..."
+                    echo "   📝 Nếu bạn có file checksum SHA256:"
+                    echo "   1. Tạo file checksum tương ứng (ví dụ: backup.tar.gz.sha256)"
+                    echo "   2. Chạy lệnh kiểm tra:"
+                    echo "      sha256sum -c backup.tar.gz.sha256"
+                    echo "   3. Nếu checksum không khớp, file có thể bị hỏng khi tải"
+                    echo ""
+                    echo "   💡 Nếu không có checksum, bạn có thể tạo backup mới và đảm bảo"
+                    echo "   quá trình upload/tải không bị gián đoạn."
+                    return 1 ;;
+            esac
+            strategy=$((strategy + 1))
+        done
+        
+        if [ $success -eq 1 ]; then
+            echo -e "${GREEN}✅ Đã tải về: $local_path${NC}"
+            echo -e "   ☁️  Nguồn: $remote_path"
+            return 0
+        else
+            echo -e "${RED}❌ Đã thử tất cả 10 chiến lược nhưng vẫn không tải được file từ Google Drive.${NC}"
             return 1
         fi
-    fi
-
-    echo "📥 Đang tải từ Google Drive..."
-    rclone copy "$remote_path" "$local_path" --progress && {
-        echo -e "${GREEN}✅ Đã tải về: $local_path${NC}"
-        echo -e "   ☁️  Nguồn: $remote_path"
-    } || {
-        echo -e "${RED}Có lỗi khi tải từ Google Drive.${NC}"
-        if ! check_gdrive_connection; then
-            suggest_gdrive_reconnect
-        fi
-        return 1
     }
+    
+    # Thực thi giải quyết vấn đề tải file từ Google Drive
+    solve_gdrive_download_problem
 }
 
 # ============================================================

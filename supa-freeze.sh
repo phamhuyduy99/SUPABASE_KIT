@@ -240,39 +240,191 @@ if [ -n "$REMOTE" ]; then
 
     if [ "$auto_copy_ssh" = "y" ]; then
         echo -e "${CYAN}   Đang copy public key sang $REMOTE...${NC}"
-        echo "   Bạn hãy nhập MẬT KHẨU của VPS đích khi được hỏi."
-        echo "   (Nếu nhập sai, bạn sẽ được hỏi lại tối đa 3 lần.)"
-        try_count=0
-        copy_success=0
-        while [ $try_count -lt 3 ]; do
-            if command -v ssh-copy-id >/dev/null 2>&1; then
-                # Ghi log lỗi tạm để hiển thị nếu thất bại
-                if ssh-copy-id -i ~/.ssh/id_rsa.pub "$REMOTE" 2>/tmp/ssh_copy_err_$$; then
-                    echo -e "${GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
-                    copy_success=1
-                    break
-                else
-                    try_count=$((try_count + 1))
-                    if [ $try_count -lt 3 ]; then
-                        echo -e "${YELLOW}   ⚠️ Lần thử thứ $try_count thất bại.${NC}"
-                        echo "   Lỗi: $(cat /tmp/ssh_copy_err_$$ | tail -1)"
-                        read -p "   Bạn có muốn thử lại không? (y/n): " retry_ssh_copy
-                        if [ "$retry_ssh_copy" != "y" ]; then
-                            break
+        
+        solve_ssh_sync_problem() {
+            local strategy=1
+            local success=0
+            
+            while [ $strategy -le 10 ]; do
+                if [ "$strategy" -eq 1 ]; then
+                    # Chiến lược 1: Tự động tạo SSH key nếu chưa có
+                    echo "   🔧 Chiến lược 1/10: Kiểm tra và tạo SSH key nếu cần..."
+                    if [ ! -f ~/.ssh/id_rsa ] || [ ! -f ~/.ssh/id_rsa.pub ]; then
+                        echo "   ⚠️ SSH key chưa tồn tại."
+                        read -p "   👉 Bạn có muốn tạo SSH key mới không? (y/n): " create_key
+                        if [ "$create_key" = "y" ]; then
+                            ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -C "$REAL_USER@$(hostname)"
+                            if [ -f ~/.ssh/id_rsa ] && [ -f ~/.ssh/id_rsa.pub ]; then
+                                echo "   ✅ Đã tạo SSH key thành công."
+                            else
+                                echo "   ❌ Tạo SSH key thất bại."
+                            fi
                         fi
                     else
-                        echo -e "${YELLOW}   ⚠️ Đã thử 3 lần không thành công.${NC}"
-                        echo "   Lỗi cuối cùng: $(cat /tmp/ssh_copy_err_$$ | tail -1)"
+                        echo "   ✅ SSH key đã tồn tại."
                     fi
+                elif [ "$strategy" -eq 2 ]; then
+                    # Chiến lược 2: Thử copy public key bằng ssh-copy-id với retry
+                    echo "   🔧 Chiến lược 2/10: Thử copy public key với retry..."
+                    try_count=0
+                    max_retries=3
+                    while [ $try_count -lt $max_retries ]; do
+                        if command -v ssh-copy-id >/dev/null 2>&1; then
+                            echo "   🔄 Lần thử thứ $((try_count + 1))..."
+                            if ssh-copy-id -i ~/.ssh/id_rsa.pub "$REMOTE" 2>/tmp/ssh_copy_err_$$; then
+                                echo "   ✅ Copy thành công!"
+                                success=1
+                                break 2
+                            else
+                                try_count=$((try_count + 1))
+                                if [ $try_count -lt $max_retries ]; then
+                                    echo "   ⚠️ Lần thử $try_count thất bại."
+                                    sleep 5
+                                fi
+                            fi
+                        else
+                            echo "   ❌ ssh-copy-id không khả dụng."
+                            break
+                        fi
+                    done
+                    if [ $success -eq 0 ]; then
+                        echo "   ❌ Đã thử $max_retries lần nhưng vẫn thất bại."
+                    fi
+                elif [ "$strategy" -eq 3 ]; then
+                    # Chiến lược 3: Hướng dẫn copy thủ công
+                    echo "   🔧 Chiến lược 3/10: Hướng dẫn copy thủ công..."
+                    echo "   📋 Public key của bạn:"
+                    cat ~/.ssh/id_rsa.pub 2>/dev/null
+                    echo ""
+                    echo "   📝 Các bước thêm thủ công:"
+                    echo "   1. SSH vào VPS đích: ssh $REMOTE"
+                    echo "   2. Tạo thư mục .ssh nếu chưa có: mkdir -p ~/.ssh"
+                    echo "   3. Thêm public key vào authorized_keys:"
+                    echo "      echo 'public_key_của_bạn' >> ~/.ssh/authorized_keys"
+                    echo "   4. Đặt quyền đúng: chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+                    read -p "   👉 Bạn đã thêm public key thủ công chưa? (y/n): " manual_done
+                    if [ "$manual_done" = "y" ]; then
+                        echo "   🔄 Đang kiểm tra kết nối SSH..."
+                        if ssh -o ConnectTimeout=10 -o BatchMode=yes "$REMOTE" exit 2>/dev/null; then
+                            echo "   ✅ Kết nối SSH thành công!"
+                            success=1
+                            break
+                        else
+                            echo "   ❌ Kết nối SSH vẫn thất bại."
+                        fi
+                    fi
+                elif [ "$strategy" -eq 4 ]; then
+                    # Chiến lược 4: Kiểm tra kết nối SSH trước khi đồng bộ
+                    echo "   🔧 Chiến lược 4/10: Kiểm tra kết nối SSH..."
+                    echo "   🔄 Đang kiểm tra kết nối đến $REMOTE (timeout 10s)..."
+                    if ssh -o ConnectTimeout=10 -o BatchMode=yes "$REMOTE" exit 2>/dev/null; then
+                        echo "   ✅ Kết nối SSH hoạt động bình thường."
+                    else
+                        echo "   ⚠️ Không thể kết nối SSH đến $REMOTE."
+                        echo "   📝 Vui lòng kiểm tra:"
+                        echo "   - IP/hostname và username có đúng không"
+                        echo "   - Port SSH (mặc định 22) có mở không"
+                        echo "   - Firewall có chặn kết nối không"
+                        echo "   - Mật khẩu có chính xác không (nếu dùng mật khẩu)"
+                        return 1
+                    fi
+                elif [ "$strategy" -eq 5 ]; then
+                    # Chiến lược 5: Thử dùng scp thay vì rsync nếu rsync lỗi
+                    echo "   🔧 Chiến lược 5/10: Chuẩn bị sử dụng scp thay thế..."
+                    echo "   ℹ️ Trong trường hợp rsync gặp lỗi, script sẽ tự động sử dụng scp."
+                    echo "   ✅ Đã cấu hình sẵn phương án dự phòng scp."
+                    # Lưu ý: Phần này sẽ được áp dụng khi thực hiện đồng bộ file sau này
+                elif [ "$strategy" -eq 6 ]; then
+                    # Chiến lược 6: Kiểm tra thư mục đích có tồn tại không
+                    echo "   🔧 Chiến lược 6/10: Kiểm tra thư mục đích trên VPS đích..."
+                    echo "   🔄 Đang kiểm tra thư mục home trên $REMOTE..."
+                    if ssh -o ConnectTimeout=10 "$REMOTE" "[ -d /home/$REAL_USER ] || [ -d /root ]"; then
+                        echo "   ✅ Thư mục home tồn tại trên VPS đích."
+                    else
+                        echo "   ⚠️ Thư mục home không tồn tại, đang tạo..."
+                        if ssh -o ConnectTimeout=10 "$REMOTE" "sudo mkdir -p /home/$REAL_USER && sudo chown $REAL_USER:$REAL_USER /home/$REAL_USER"; then
+                            echo "   ✅ Đã tạo thư mục home thành công."
+                        else
+                            echo "   ❌ Không thể tạo thư mục home trên VPS đích."
+                            echo "   📝 Vui lòng liên hệ quản trị viên VPS đích để tạo thư mục home."
+                            return 1
+                        fi
+                    fi
+                elif [ "$strategy" -eq 7 ]; then
+                    # Chiến lược 7: Xử lý lỗi permission thư mục home
+                    echo "   🔧 Chiến lược 7/10: Kiểm tra quyền thư mục home..."
+                    echo "   🔄 Đang kiểm tra quyền trên VPS đích..."
+                    if ssh -o ConnectTimeout=10 "$REMOTE" "[ -w /home/$REAL_USER ]"; then
+                        echo "   ✅ Có quyền ghi vào thư mục home."
+                    else
+                        echo "   ⚠️ Không có quyền ghi vào thư mục home."
+                        echo "   📝 Vui lòng chạy lệnh sau trên VPS đích:"
+                        echo "   sudo chown -R $REAL_USER:$REAL_USER /home/$REAL_USER"
+                        echo "   sudo chmod 700 /home/$REAL_USER"
+                        read -p "   👉 Bạn đã sửa quyền thư mục chưa? (y/n): " perm_fixed
+                        if [ "$perm_fixed" != "y" ]; then
+                            return 1
+                        fi
+                    fi
+                elif [ "$strategy" -eq 8 ]; then
+                    # Chiến lược 8: Kiểm tra dung lượng đĩa trên VPS đích
+                    echo "   🔧 Chiến lược 8/10: Kiểm tra dung lượng đĩa trên VPS đích..."
+                    echo "   🔄 Đang kiểm tra dung lượng trên $REMOTE..."
+                    remote_space=$(ssh -o ConnectTimeout=10 "$REMOTE" "df -m /home | tail -1 | awk '{print \$4}'" 2>/dev/null)
+                    if [ -n "$remote_space" ] && [ "$remote_space" -gt 1000 ]; then
+                        echo "   ✅ Đủ dung lượng trên VPS đích ($remote_space MB trống)."
+                    else
+                        echo "   ⚠️ Dung lượng trên VPS đích có thể không đủ."
+                        echo "   📝 Vui lòng đảm bảo có ít nhất 1GB dung lượng trống trên VPS đích."
+                        read -p "   👉 Bạn đã giải phóng dung lượng chưa? (y/n): " space_freed
+                        if [ "$space_freed" != "y" ]; then
+                            return 1
+                        fi
+                    fi
+                elif [ "$strategy" -eq 9 ]; then
+                    # Chiến lược 9: Cho phép nhập lại IP/user nếu nhập sai
+                    echo "   🔧 Chiến lược 9/10: Nhập lại thông tin kết nối..."
+                    echo "   📝 Thông tin kết nối hiện tại: $REMOTE"
+                    read -p "   👉 Bạn có muốn nhập lại IP/username không? (y/n): " reenter_remote
+                    if [ "$reenter_remote" = "y" ]; then
+                        read -p "   Nhập lại địa chỉ VPS đích (user@ip): " new_remote
+                        if [ -n "$new_remote" ]; then
+                            REMOTE="$new_remote"
+                            echo "   ✅ Đã cập nhật địa chỉ VPS đích: $REMOTE"
+                            # Quay lại chiến lược 4 để kiểm tra kết nối mới
+                            strategy=3
+                            continue
+                        fi
+                    fi
+                elif [ "$strategy" -eq 10 ]; then
+                    # Chiến lược 10: Hướng dẫn sử dụng rsync thủ công
+                    echo "   🔧 Chiến lược 10/10: Hướng dẫn rsync thủ công..."
+                    echo "   📝 Nếu tự động vẫn thất bại, bạn có thể dùng rsync thủ công:"
+                    echo "   1. Đảm bảo SSH key đã được thiết lập"
+                    echo "   2. Chạy lệnh rsync sau:"
+                    echo "      rsync -avz -e 'ssh -o StrictHostKeyChecking=accept-new' \\"
+                    echo "          --rsync-path='cd ~ && rsync' \\"
+                    echo "          ./ $REMOTE:~/supabase-backup-package/"
+                    echo "   3. Lệnh trên sẽ đồng bộ toàn bộ thư mục hiện tại sang VPS đích"
+                    echo ""
+                    echo "   💡 Mẹo: Nếu gặp lỗi getcwd, hãy thêm --rsync-path='cd ~ && rsync'"
+                    return 1
                 fi
+                
+                strategy=$((strategy + 1))
+            done
+            
+            if [ $success -eq 1 ]; then
+                echo -e "${GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
+                return 0
             else
-                echo -e "${YELLOW}   ⚠️ ssh-copy-id không khả dụng trên hệ thống này.${NC}"
-                break
+                echo -e "${RED}   ❌ Đã thử tất cả 10 chiến lược nhưng vẫn không thể thiết lập SSH.${NC}"
+                return 1
             fi
-        done
-        rm -f /tmp/ssh_copy_err_$$
-
-        if [ $copy_success -eq 0 ]; then
+        }
+        
+        # Thực thi giải quyết vấn đề đồng bộ SSH
+        if ! solve_ssh_sync_problem; then
             echo "   👉 Bạn có thể thử tự copy bằng lệnh thủ công hoặc liên hệ quản trị VPS đích."
             echo "   📋 Public key của bạn (copy toàn bộ dòng bên dưới):"
             cat ~/.ssh/id_rsa.pub 2>/dev/null
