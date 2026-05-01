@@ -430,6 +430,8 @@ else
                                 END { if (found) exit 1; else exit 0 }
                             ' "$TARGET_DIR/docker-compose.yml"; then
                                 add_privileged "$svc"
+                            else
+                                echo "      ℹ️ '$svc' đã có privileged: true."
                             fi
                         fi
                     done
@@ -437,6 +439,7 @@ else
                         echo "      ✅ Đã thêm privileged: true."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -469,6 +472,7 @@ else
                     if is_yaml_valid; then
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -516,6 +520,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                         echo "      ✅ Đã đổi tag image."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -556,12 +561,15 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                                     /^    image:/a\    sysctls:\n      - net.core.somaxconn=65535\n      - net.ipv4.tcp_syncookies=1\n      - net.ipv4.ip_unprivileged_port_start=0
                                 }" "$TARGET_DIR/docker-compose.yml"
                                 echo "      ✅ Đã thêm sysctls cho '$svc'."
+                            else
+                                echo "      ℹ️ '$svc' đã có sysctls, bỏ qua."
                             fi
                         fi
                     done
                     if is_yaml_valid; then
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
@@ -578,11 +586,13 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     done
                     $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d 2>/dev/null
                     if try_start; then SUPABASE_STARTED=1; break; fi
+                    echo "      ✅ Đã thử khởi động riêng từng service."
                     ;;
                 14)
                     echo "      Thử xóa toàn bộ volumes và networks cũ."
                     docker system prune -af --volumes 2>/dev/null || true
                     if try_start; then SUPABASE_STARTED=1; break; fi
+                    echo "      ✅ Đã dọn dẹp toàn bộ volumes và networks cũ."
                     ;;
                 15)
                     echo "      Thử sử dụng Docker Compose V1 (docker-compose) thay vì V2."
@@ -590,6 +600,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down 2>/dev/null
                         docker-compose -f "$TARGET_DIR/docker-compose.yml" up -d 2>/dev/null
                         if try_start; then SUPABASE_STARTED=1; break; fi
+                        echo "      ✅ Đã thử Docker Compose V1."
                     else
                         echo "      ℹ️ docker-compose (V1) không khả dụng."
                     fi
@@ -598,6 +609,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     echo "      Thử khởi động với cờ '--compatibility'."
                     $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" --compatibility up -d 2>/dev/null
                     if try_start; then SUPABASE_STARTED=1; break; fi
+                    echo "      ✅ Đã thử khởi động với cờ '--compatibility'."
                     ;;
                 17)
                     echo "      Cập nhật Docker lên phiên bản mới nhất."
@@ -628,6 +640,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     $DOCKER_COMPOSE_CMD -f "$MINIMAL_COMPOSE" up -d 2>/dev/null || true
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     rm -f "$MINIMAL_COMPOSE"
+                    echo "      ✅ Đã thử với file docker-compose tối thiểu."
                     ;;
                 20)
                     echo "      Đề xuất cuối cùng: Sử dụng giải pháp Supabase Cloud."
