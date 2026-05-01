@@ -362,375 +362,231 @@ else
         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
         docker ps -a --filter "name=supabase" -q | xargs -r docker rm -f 2>/dev/null || true
 
-        # Tự động sao lưu file docker-compose.yml gốc trước khi sửa đổi
-        if [ ! -f "$TARGET_DIR/docker-compose.yml.original" ]; then
-            cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.original"
-            echo "   💾 Đã sao lưu file gốc: $TARGET_DIR/docker-compose.yml.original"
+        # Sao lưu file gốc (chỉ một lần)
+        ORIGINAL_COMPOSE="$TARGET_DIR/docker-compose.yml.original"
+        if [ ! -f "$ORIGINAL_COMPOSE" ]; then
+            cp "$TARGET_DIR/docker-compose.yml" "$ORIGINAL_COMPOSE"
+            echo "   💾 Đã sao lưu file gốc: $ORIGINAL_COMPOSE"
         fi
 
-        # ====== CÁC HÀM CHIẾN LƯỢC CHO VẤN ĐỀ SYSCTL ======
-        
-        # Nhóm A – Tự động hoàn toàn (1-5)
-        sysctl_01_delete_line() {
-            echo "      Xóa dòng sysctl trong docker-compose.yml..."
-            if grep -q "sysctls:" "$TARGET_DIR/docker-compose.yml"; then
-                local tmp_file=$(mktemp)
-                awk '
-                    !/^[[:space:]]*sysctls:/ && !/^[[:space:]]*-[[:space:]]*net\.ipv4\.ip_unprivileged_port_start/
-                ' "$TARGET_DIR/docker-compose.yml" > "$tmp_file"
-                sudo mv "$tmp_file" "$TARGET_DIR/docker-compose.yml"
-                echo "      ✅ Đã xóa cấu hình sysctl."
-                return 0
-            else
-                echo "      ℹ️ Không tìm thấy cấu hình sysctl."
-                return 1
-            fi
+        # Hàm kiểm tra YAML hợp lệ
+        is_yaml_valid() {
+            $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" config --quiet 2>/dev/null
+            return $?
         }
-        
-        sysctl_02_add_privileged() {
-            echo "      Thêm privileged: true cho vector, imgproxy, db..."
-            local modified=0
-            SERVICES_TO_FIX="vector imgproxy db"
-            for svc in $SERVICES_TO_FIX; do
-                if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
-                    if ! awk -v svc="$svc" '
-                        $0 ~ "^  " svc ":" { found=1; next }
-                        found && /^  [a-zA-Z]/ { found=0 }
-                        found && /^    privileged: true/ { exit 0 }
-                        END { exit 1 }
-                    ' "$TARGET_DIR/docker-compose.yml"; then
-                        local tmp_file=$(mktemp)
-                        awk -v svc="$svc" '
-                            BEGIN { in_svc=0; added=0 }
-                            $0 ~ "^  " svc ":" { in_svc=1; print; next }
-                            in_svc && /^  [a-zA-Z]/ { in_svc=0 }
-                            in_svc && !added && /^    image:/ { print; print "    privileged: true"; added=1; next }
-                            { print }
-                        ' "$TARGET_DIR/docker-compose.yml" | sudo tee "$tmp_file" > /dev/null
-                        sudo mv "$tmp_file" "$TARGET_DIR/docker-compose.yml"
-                        modified=1
-                    fi
+
+        # Biến đếm chiến lược
+        strategy=1
+        max_strategies=10
+        SUPABASE_STARTED=0
+
+        while [ $SUPABASE_STARTED -eq 0 ] && [ $strategy -le $max_strategies ]; do
+            # Nếu file hiện tại hỏng, khôi phục từ bản gốc trước khi thử chiến lược mới
+            if ! is_yaml_valid; then
+                echo -e "${YELLOW}   ⚠️ File docker-compose.yml đang bị lỗi cú pháp, khôi phục từ bản gốc...${NC}"
+                cp "$ORIGINAL_COMPOSE" "$TARGET_DIR/docker-compose.yml"
+                # Sau khi khôi phục, thử khởi động lại để kiểm tra
+                if try_start; then
+                    echo -e "${GREEN}✅ Supabase khởi động thành công sau khi khôi phục cấu hình gốc.${NC}"
+                    SUPABASE_STARTED=1
+                    break
                 fi
-            done
-            if [ $modified -eq 1 ]; then
-                echo "      ✅ Đã thêm privileged: true."
-                return 0
-            else
-                echo "      ℹ️ Tất cả service đã có privileged: true."
-                return 1
             fi
-        }
-        
-        sysctl_03_add_security_opt() {
-            echo "      Thêm security_opt và cap_add..."
-            local modified=0
-            SERVICES_TO_FIX="vector imgproxy db"
-            for svc in $SERVICES_TO_FIX; do
-                if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
-                    if ! awk -v svc="$svc" '
-                        $0 ~ "^  " svc ":" { found=1; next }
-                        found && /^  [a-zA-Z]/ { found=0 }
-                        found && (/^    security_opt:/ || /^    cap_add:/) { exit 0 }
-                        END { exit 1 }
-                    ' "$TARGET_DIR/docker-compose.yml"; then
-                        local tmp_file=$(mktemp)
-                        awk -v svc="$svc" '
-                            BEGIN { in_svc=0; added=0 }
-                            $0 ~ "^  " svc ":" { in_svc=1; print; next }
-                            in_svc && /^  [a-zA-Z]/ { in_svc=0 }
-                            in_svc && !added && /^    image:/ { 
-                                print; 
-                                print "    security_opt:"
-                                print "      - seccomp:unconfined"
-                                print "    cap_add:"
-                                print "      - SYS_ADMIN"
-                                added=1; next 
-                            }
-                            { print }
-                        ' "$TARGET_DIR/docker-compose.yml" | sudo tee "$tmp_file" > /dev/null
-                        sudo mv "$tmp_file" "$TARGET_DIR/docker-compose.yml"
-                        modified=1
-                        echo "      ✅ Đã thêm security_opt và cap_add cho service '$svc'"
+
+            echo "   🔧 Chiến lược ${strategy}/${max_strategies}:"
+            case $strategy in
+                1)
+                    echo "      Đang xóa dòng sysctl trong docker-compose.yml..."
+                    if grep -q "ip_unprivileged_port_start" "$TARGET_DIR/docker-compose.yml"; then
+                        cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
+                        sudo sed -i '/ip_unprivileged_port_start/d' "$TARGET_DIR/docker-compose.yml"
+                        if is_yaml_valid; then
+                            echo "      ✅ Đã xóa dòng sysctl."
+                            if try_start; then SUPABASE_STARTED=1; break; fi
+                        else
+                            echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                            cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
+                        fi
                     else
-                        echo "      ℹ️ Service '$svc' đã có security_opt hoặc cap_add, bỏ qua."
+                        echo "      ℹ️ Không tìm thấy dòng sysctl, bỏ qua."
                     fi
-                fi
-            done
-            if [ $modified -eq 1 ]; then
-                return 0
-            else
-                return 1
-            fi
-        }
-        
-        sysctl_04_docker_run_sysctl() {
-            echo "      Thử dùng --sysctl trong lệnh docker run..."
-            # Lưu ý: Đây là chiến lược phức tạp, thường không khả thi với docker-compose
-            echo "      ℹ️ Chiến lược này yêu cầu chuyển từ docker-compose sang docker run thủ công."
-            echo "      ℹ️ Không được khuyến khích cho Supabase do độ phức tạp cao."
-            return 1
-        }
-        
-        sysctl_05_clean_cache() {
-            echo "      Xóa cache container/image cũ..."
-            docker system prune -af >/dev/null 2>&1
-            docker volume prune -f >/dev/null 2>&1
-            echo "      ✅ Đã dọn dẹp cache Docker."
-            return 0
-        }
-        
-        # Nhóm B – Bán tự động (hỏi y/n) (6-10)
-        sysctl_06_docker_daemon() {
-            echo "      Cấu hình Docker daemon để bỏ qua sysctl..."
-            if ask_user_confirmation "Bạn có muốn cấu hình Docker daemon không? (sẽ khởi động lại Docker)" "n"; then
-                echo "      Đang cấu hình Docker..."
-                if [ ! -f /etc/docker/daemon.json ]; then
-                    echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null
-                fi
-                sudo python3 -c "
+                    ;;
+                2)
+                    echo "      Đang thêm privileged: true cho vector, imgproxy, db..."
+                    cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
+                    for svc in vector imgproxy db; do
+                        if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
+                            if ! awk -v svc="$svc" '
+                                $0 ~ "^  " svc ":" { found=1; next }
+                                found && /^  [a-zA-Z]/ { found=0 }
+                                found && /^    privileged: true/ { exit 0 }
+                                END { if (found) exit 1; else exit 0 }
+                            ' "$TARGET_DIR/docker-compose.yml"; then
+                                add_privileged "$svc"
+                            else
+                                echo "      ℹ️ '$svc' đã có privileged: true."
+                            fi
+                        fi
+                    done
+                    if is_yaml_valid; then
+                        echo "      ✅ Đã thêm privileged: true."
+                        if try_start; then SUPABASE_STARTED=1; break; fi
+                    else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
+                    fi
+                    ;;
+                3)
+                    echo "      Đang thêm security_opt và cap_add... (đảm bảo không trùng lặp)"
+                    cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
+                    for svc in vector imgproxy db; do
+                        if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
+                            # Chỉ thêm nếu chưa có security_opt
+                            if ! awk -v svc="$svc" '
+                                $0 ~ "^  " svc ":" { found=1; next }
+                                found && /^  [a-zA-Z]/ { found=0 }
+                                found && /^    security_opt:/ { exit 0 }
+                                END { if (found) exit 1; else exit 0 }
+                            ' "$TARGET_DIR/docker-compose.yml"; then
+                                # Thêm security_opt và cap_add an toàn
+                                tmp_file=$(mktemp)
+                                awk -v svc="$svc" '
+                                    BEGIN { in_svc=0; added=0 }
+                                    $0 ~ "^  " svc ":" { in_svc=1; print; next }
+                                    in_svc && /^  [a-zA-Z]/ { in_svc=0 }
+                                    in_svc && !added && /^    image:/ { print; print "    security_opt:"; print "      - seccomp:unconfined"; print "    cap_add:"; print "      - SYS_ADMIN"; added=1; next }
+                                    { print }
+                                ' "$TARGET_DIR/docker-compose.yml" | sudo tee "$tmp_file" > /dev/null
+                                sudo mv "$tmp_file" "$TARGET_DIR/docker-compose.yml"
+                                echo "      ✅ Đã thêm security_opt và cap_add cho '$svc'"
+                            else
+                                echo "      ℹ️ '$svc' đã có security_opt, bỏ qua."
+                            fi
+                        fi
+                    done
+                    if is_yaml_valid; then
+                        if try_start; then SUPABASE_STARTED=1; break; fi
+                    else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
+                    fi
+                    ;;
+                4)
+                    echo "      Cấu hình Docker daemon để bỏ qua sysctl."
+                    echo -e "${YELLOW}      Hành động này cần quyền sudo và sẽ khởi động lại Docker.${NC}"
+                    read -p "      👉 Bạn có muốn tiếp tục không? (y/n): " ans
+                    if [ "$ans" = "y" ]; then
+                        [ ! -f /etc/docker/daemon.json ] && echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null
+                        sudo python3 -c "
 import json
 config = {}
 try:
-    with open('/etc/docker/daemon.json') as f:
-        config = json.load(f)
-except:
-    pass
+    with open('/etc/docker/daemon.json') as f: config = json.load(f)
+except: pass
 config['default-ulimits'] = {'nofile': {'Hard': 65536, 'Name': 'nofile', 'Soft': 65536}}
-with open('/etc/docker/daemon.json', 'w') as f:
-    json.dump(config, f, indent=4)
+with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
 "
-                echo "      ✅ Đã cấu hình Docker."
-                echo "      🔄 Đang khởi động lại Docker..."
-                sudo systemctl restart docker
-                sleep 5
-                return 0
-            else
-                return 1
-            fi
-        }
-        
-        sysctl_07_downgrade_containerd() {
-            echo "      Hạ cấp containerd về 1.7.28-1..."
-            CONTAINERD_VERSION=$(containerd --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
-            MIN_BUGGY_VERSION="1.7.28"
-            if dpkg --compare-versions "$CONTAINERD_VERSION" ge "$MIN_BUGGY_VERSION"; then
-                if ask_user_confirmation "Bạn có muốn hạ cấp containerd xuống 1.7.28-1 không?" "n"; then
-                    echo "      Đang hạ cấp containerd..."
-                    if sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null; then
-                        echo "      ✅ Hạ cấp thành công."
-                        sudo apt-mark hold containerd.io 2>/dev/null
-                        return 0
+                        sudo systemctl restart docker
+                        sleep 5
+                        echo "      ✅ Đã cấu hình Docker."
+                        if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo "      ❌ Hạ cấp thất bại."
-                        return 1
+                        echo "      ⏭️ Bỏ qua."
                     fi
-                else
-                    return 1
-                fi
-            else
-                echo "      ℹ️ Phiên bản containerd hiện tại không gây lỗi."
-                return 1
-            fi
-        }
-        
-        sysctl_08_change_runtime() {
-            echo "      Thử thay đổi runtime Docker..."
-            show_manual_guide "Thay đổi runtime Docker" \
-                "Cài đặt runtime mong muốn (sysbox, nvidia-container-runtime, v.v.)" \
-                "Thêm dòng 'runtime: runtime_name' vào từng service trong docker-compose.yml" \
-                "Khởi động lại Docker và thử lại"
-            return 1
-        }
-        
-        sysctl_09_disable_apparmor() {
-            echo "      Vô hiệu hóa AppArmor trên host..."
-            if command -v aa-status >/dev/null 2>&1 && aa-status --enabled 2>/dev/null; then
-                if ask_user_confirmation "Bạn có muốn tạm thời vô hiệu hóa AppArmor không?" "n"; then
-                    sudo systemctl stop apparmor
-                    echo "      ✅ Đã vô hiệu hóa AppArmor."
-                    return 0
-                else
-                    return 1
-                fi
-            else
-                echo "      ℹ️ AppArmor không hoạt động hoặc không tồn tại."
-                return 1
-            fi
-        }
-        
-        sysctl_10_disable_selinux() {
-            echo "      Tắt SELinux trên host..."
-            if [ -f /etc/selinux/config ] && grep -q "SELINUX=enforcing" /etc/selinux/config; then
-                if ask_user_confirmation "Bạn có muốn chuyển SELinux sang permissive không?" "n"; then
-                    sudo setenforce 0
-                    echo "      ✅ Đã chuyển SELinux sang permissive."
-                    return 0
-                else
-                    return 1
-                fi
-            else
-                echo "      ℹ️ SELinux không ở chế độ enforcing."
-                return 1
-            fi
-        }
-        
-        # Nhóm C – Nâng cao (thay đổi hệ thống) (11-15)
-        sysctl_11_change_docker() {
-            echo "      Sử dụng phiên bản Docker khác..."
-            show_manual_guide "Chuyển từ docker.io sang docker-ce" \
-                "Gỡ cài đặt docker.io: sudo apt remove docker.io" \
-                "Cài đặt Docker CE theo hướng dẫn chính thức: https://docs.docker.com/engine/install/ubuntu/" \
-                "Khởi động lại dịch vụ Docker"
-            return 1
-        }
-        
-        sysctl_12_kernel_params() {
-            echo "      Thay đổi kernel parameters..."
-            if ask_user_confirmation "Bạn có muốn thử thay đổi kernel parameters không?" "n"; then
-                echo "      Đang áp dụng kernel parameters..."
-                sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0
-                echo "      net.ipv4.ip_unprivileged_port_start=0" | sudo tee -a /etc/sysctl.conf
-                echo "      ✅ Đã áp dụng kernel parameters."
-                return 0
-            else
-                return 1
-            fi
-        }
-        
-        sysctl_13_custom_image() {
-            echo "      Sử dụng image Supabase tự build..."
-            show_manual_guide "Sử dụng image Supabase tùy chỉnh" \
-                "Build image Supabase từ source code với các patch cần thiết" \
-                "Đẩy image lên registry riêng" \
-                "Thay đổi tag image trong docker-compose.yml"
-            return 1
-        }
-        
-        sysctl_14_net_host() {
-            echo "      Chạy container với --net=host..."
-            local modified=0
-            SERVICES_TO_FIX="vector imgproxy db kong api auth realtime storage"
-            for svc in $SERVICES_TO_FIX; do
-                if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
-                    if ! awk -v svc="$svc" '
-                        $0 ~ "^  " svc ":" { found=1; next }
-                        found && /^  [a-zA-Z]/ { found=0 }
-                        found && /^    network_mode: host/ { exit 0 }
-                        END { exit 1 }
-                    ' "$TARGET_DIR/docker-compose.yml"; then
-                        local tmp_file=$(mktemp)
-                        awk -v svc="$svc" '
-                            BEGIN { in_svc=0; added=0 }
-                            $0 ~ "^  " svc ":" { in_svc=1; print; next }
-                            in_svc && /^  [a-zA-Z]/ { in_svc=0 }
-                            in_svc && !added && /^    image:/ { print; print "    network_mode: host"; added=1; next }
-                            { print }
-                        ' "$TARGET_DIR/docker-compose.yml" | sudo tee "$tmp_file" > /dev/null
-                        sudo mv "$tmp_file" "$TARGET_DIR/docker-compose.yml"
-                        modified=1
+                    ;;
+                5)
+                    echo "      Kiểm tra và hạ cấp containerd nếu cần."
+                    CONTAINERD_VERSION=$(containerd --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
+                    echo "      📋 Phiên bản containerd: $CONTAINERD_VERSION"
+                    if dpkg --compare-versions "$CONTAINERD_VERSION" ge "2.0"; then
+                        echo -e "${YELLOW}      ⚠️ Phát hiện containerd phiên bản $CONTAINERD_VERSION có thể gây lỗi.${NC}"
+                        read -p "      👉 Bạn có muốn hạ cấp containerd xuống 1.7.28-1 không? (y/n): " ans
+                        if [ "$ans" = "y" ]; then
+                            sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null
+                            sudo systemctl restart docker
+                            sleep 5
+                            echo "      ✅ Đã hạ cấp containerd."
+                            if try_start; then SUPABASE_STARTED=1; break; fi
+                        else
+                            echo "      ⏭️ Bỏ qua."
+                        fi
+                    else
+                        echo "      ℹ️ Phiên bản containerd không cần hạ cấp."
                     fi
-                fi
-            done
-            if [ $modified -eq 1 ]; then
-                echo "      ✅ Đã thêm network_mode: host."
-                return 0
-            else
-                echo "      ℹ️ Tất cả service đã có network_mode: host."
-                return 1
-            fi
-        }
-        
-        sysctl_15_use_podman() {
-            echo "      Sử dụng podman thay cho Docker..."
-            show_manual_guide "Chuyển từ Docker sang Podman" \
-                "Cài đặt Podman: sudo apt install podman" \
-                "Chuyển đổi docker-compose.yml sang podman-compose" \
-                "Chạy lại hệ thống với podman-compose up -d"
-            return 1
-        }
-        
-        # Nhóm D – Hướng dẫn thủ công (16-20)
-        sysctl_16_manual_privileged() {
-            echo "      Hướng dẫn tự thêm privileged: true thủ công..."
-            show_manual_guide "Thêm privileged: true thủ công" \
-                "Mở file: sudo nano $TARGET_DIR/docker-compose.yml" \
-                "Tìm service 'vector' (dòng bắt đầu bằng '  vector:')" \
-                "Thêm dòng '    privileged: true' (4 dấu cách) vào sau dòng 'image:'" \
-                "Làm tương tự cho 'imgproxy' và 'db'" \
-                "Lưu file và thoát, sau đó chạy lại script"
-            return 1
-        }
-        
-        sysctl_17_manual_daemon() {
-            echo "      Hướng dẫn sửa file daemon.json thủ công..."
-            show_manual_guide "Cấu hình Docker daemon thủ công" \
-                "Tạo file /etc/docker/daemon.json nếu chưa có" \
-                "Thêm nội dung: {\"default-ulimits\": {\"nofile\": {\"Hard\": 65536, \"Name\": \"nofile\", \"Soft\": 65536}}}" \
-                "Lưu file và chạy: sudo systemctl restart docker" \
-                "Chạy lại script restore"
-            return 1
-        }
-        
-        sysctl_18_manual_docker() {
-            echo "      Hướng dẫn cài đặt Docker từ kho chính thức..."
-            show_manual_guide "Cài Docker từ repository chính thức" \
-                "Gỡ Docker hiện tại: sudo apt remove docker.io docker-compose-v2" \
-                "Cài Docker CE: curl -fsSL https://get.docker.com | sh" \
-                "Thêm user vào group docker: sudo usermod -aG docker $REAL_USER" \
-                "Đăng nhập lại và chạy script"
-            return 1
-        }
-        
-        sysctl_19_request_nesting() {
-            echo "      Yêu cầu nhà cung cấp VPS bật nesting=1..."
-            show_manual_guide "Liên hệ nhà cung cấp VPS bật nesting" \
-                "Hostinger: Liên hệ support yêu cầu 'enable nesting'" \
-                "Namecheap: Yêu cầu 'LXC nesting enabled'" \
-                "OVH: Sử dụng template 'Docker' thay vì 'Ubuntu'" \
-                "Sau khi xác nhận, chạy lại script này"
-            return 1
-        }
-        
-        sysctl_20_switch_kvm() {
-            echo "      Chuyển sang VPS dùng KVM..."
-            show_manual_guide "Di chuyển sang VPS KVM" \
-                "Tạo VPS mới dùng KVM tại nhà cung cấp uy tín (DigitalOcean, Linode, AWS EC2)" \
-                "Cài đặt bộ kit Supabase trên VPS mới" \
-                "Restore backup từ VPS cũ sang VPS mới" \
-                "Cập nhật DNS trỏ về IP mới"
-            return 1
-        }
+                    ;;
+                6)
+                    echo "      Thử sử dụng image Supabase phiên bản cũ hơn."
+                    cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
+                    sudo sed -i 's/:latest/:v0.23.11/g' "$TARGET_DIR/docker-compose.yml"
+                    if is_yaml_valid; then
+                        echo "      ✅ Đã đổi tag image."
+                        if try_start; then SUPABASE_STARTED=1; break; fi
+                    else
+                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
+                    fi
+                    ;;
+                7)
+                    echo "      Hướng dẫn thử runtime khác (sysbox, nvidia)."
+                    echo "      📝 Để thử runtime khác, bạn cần:"
+                    echo "      1. Cài đặt runtime mong muốn (sysbox, nvidia-container-runtime, v.v.)"
+                    echo "      2. Thêm dòng 'runtime: sysbox-runc' vào từng service trong docker-compose.yml"
+                    echo "      3. Khởi động lại Docker và thử lại"
+                    read -p "      👉 Bạn đã cài đặt runtime khác chưa? (y/n): " ans
+                    [ "$ans" = "y" ] && try_start && SUPABASE_STARTED=1 && break
+                    ;;
+                8)
+                    echo "      Kiểm tra AppArmor/SELinux."
+                    if command -v aa-status &>/dev/null && aa-status --enabled 2>/dev/null; then
+                        echo -e "${YELLOW}      ⚠️ AppArmor đang hoạt động.${NC}"
+                        read -p "      👉 Bạn có muốn tạm thời vô hiệu hóa AppArmor không? (y/n): " ans
+                        if [ "$ans" = "y" ]; then
+                            sudo aa-teardown
+                            echo "      ✅ Đã vô hiệu hóa AppArmor."
+                            if try_start; then SUPABASE_STARTED=1; break; fi
+                        fi
+                    fi
+                    if command -v getenforce &>/dev/null && [ "$(getenforce)" != "Disabled" ]; then
+                        echo -e "${YELLOW}      ⚠️ SELinux đang bật.${NC}"
+                        read -p "      👉 Bạn có muốn tắt SELinux không? (y/n): " ans
+                        if [ "$ans" = "y" ]; then
+                            sudo setenforce 0
+                            echo "      ✅ Đã tắt SELinux."
+                            if try_start; then SUPABASE_STARTED=1; break; fi
+                        fi
+                    fi
+                    ;;
+                9)
+                    echo "      Hướng dẫn liên hệ nhà cung cấp VPS."
+                    echo "      📝 Các nhà cung cấp VPS LXC/OpenVZ thường cần bật 'nesting' để chạy Docker:"
+                    echo "      - Hostinger: Liên hệ support yêu cầu 'enable nesting'"
+                    echo "      - Namecheap: Yêu cầu 'LXC nesting enabled'"
+                    echo "      - OVH: Sử dụng template 'Docker' thay vì 'Ubuntu'"
+                    echo "      - Các nhà cung cấp khác: Yêu cầu 'enable container nesting' hoặc 'lxc.apparmor.profile=unconfined'"
+                    read -p "      👉 Bạn đã liên hệ nhà cung cấp chưa? (y/n): " ans
+                    [ "$ans" = "y" ] && try_start && SUPABASE_STARTED=1 && break
+                    ;;
+                10)
+                    echo "      Hướng dẫn cuối cùng - Di chuyển sang VPS KVM."
+                    echo "      💡 VPS sử dụng công nghệ ảo hóa KVM (như DigitalOcean, Linode, AWS EC2)"
+                    echo "      hoàn toàn tương thích với Docker và Supabase mà không cần cấu hình đặc biệt."
+                    echo ""
+                    echo "      📋 Các bước di chuyển:"
+                    echo "      1. Tạo VPS mới dùng KVM tại nhà cung cấp uy tín"
+                    echo "      2. Cài đặt bộ kit Supabase trên VPS mới"
+                    echo "      3. Restore backup từ VPS cũ sang VPS mới"
+                    echo "      4. Cập nhật DNS trỏ về IP mới"
+                    echo ""
+                    echo "      📞 Nếu bạn cần hỗ trợ di chuyển, vui lòng liên hệ đội ngũ kỹ thuật của chúng tôi."
+                    ;;
+            esac
 
-        # Áp dụng framework 20 chiến lược
-        SYSCTL_STRATEGIES=(
-            sysctl_01_delete_line
-            sysctl_02_add_privileged
-            sysctl_03_add_security_opt
-            sysctl_04_docker_run_sysctl
-            sysctl_05_clean_cache
-            sysctl_06_docker_daemon
-            sysctl_07_downgrade_containerd
-            sysctl_08_change_runtime
-            sysctl_09_disable_apparmor
-            sysctl_10_disable_selinux
-            sysctl_11_change_docker
-            sysctl_12_kernel_params
-            sysctl_13_custom_image
-            sysctl_14_net_host
-            sysctl_15_use_podman
-            sysctl_16_manual_privileged
-            sysctl_17_manual_daemon
-            sysctl_18_manual_docker
-            sysctl_19_request_nesting
-            sysctl_20_switch_kvm
-        )
-        
-        if apply_all_strategies "sysctl ip_unprivileged_port_start" "try_start" "${SYSCTL_STRATEGIES[@]}"; then
-            SUPABASE_STARTED=1
-            echo -e "${GREEN}✅ Supabase đã khởi động thành công sau khi áp dụng các chiến lược!${NC}"
-        else
-            SUPABASE_STARTED=0
-            echo -e "${RED}❌ Đã thử tất cả 20 chiến lược nhưng vẫn không khắc phục được lỗi sysctl.${NC}"
+            # Tránh lặp vô hạn nếu không có thay đổi
+            strategy=$((strategy + 1))
+        done
+
+        if [ $SUPABASE_STARTED -eq 0 ]; then
+            echo -e "${RED}❌ Đã thử tất cả $max_strategies chiến lược nhưng vẫn không khắc phục được lỗi sysctl.${NC}"
             echo "   📋 Lỗi cuối cùng:"
             echo "$LAST_DOCKER_ERR"
         fi
