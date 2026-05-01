@@ -753,6 +753,70 @@ retry_command() {
 }
 
 # ============================================================
+# FRAMEWORK 20 CHIẾN LƯỢC TOÀN DIỆN CHO MỌI VẤN ĐỀ
+# ============================================================
+
+# Framework áp dụng tối đa 20 chiến lược cho một vấn đề
+# Sử dụng: apply_all_strategies "tên_vấn_đề" "hàm_kiểm_tra_thành_công" "mảng_các_hàm_chiến_lược"
+apply_all_strategies() {
+    local problem_name="$1"
+    local check_func="$2"
+    shift 2
+    local strategies=("$@")
+    local total=${#strategies[@]}
+    local i=1
+
+    echo -e "${YELLOW}🔍 Đang xử lý: $problem_name (tối đa $total chiến lược)${NC}"
+    for func in "${strategies[@]}"; do
+        echo -e "${CYAN}   🔧 [Chiến lược $i/$total]${NC}"
+        if $func; then
+            if $check_func; then
+                echo -e "${GREEN}   ✅ Thành công với chiến lược $i!${NC}"
+                return 0
+            else
+                echo -e "${YELLOW}   ⚠️ Chiến lược $i đã chạy nhưng vấn đề chưa được giải quyết.${NC}"
+            fi
+        else
+            echo -e "${YELLOW}   ⏭️ Chiến lược $i không áp dụng được hoặc bị bỏ qua.${NC}"
+        fi
+        i=$((i + 1))
+    done
+    echo -e "${RED}❌ Đã thử tất cả $total chiến lược cho vấn đề '$problem_name' nhưng không thành công.${NC}"
+    return 1
+}
+
+# Hàm tiện ích để hỏi người dùng trước khi thực hiện thay đổi hệ thống
+ask_user_confirmation() {
+    local message="$1"
+    local default="${2:-n}"
+    read -p "   👉 $message (y/n) [${default}]: " choice
+    case "$choice" in
+        y|Y|yes|YES) return 0 ;;
+        n|N|no|NO|"") 
+            if [ "$default" = "y" ]; then
+                return 0
+            else
+                return 1
+            fi ;;
+        *) return 1 ;;
+    esac
+}
+
+# Hàm tiện ích để hiển thị hướng dẫn thủ công
+show_manual_guide() {
+    local title="$1"
+    shift
+    echo -e "${MAGENTA}📋 Hướng dẫn thủ công: $title${NC}"
+    echo "   📝 Các bước thực hiện:"
+    local step=1
+    for instruction in "$@"; do
+        echo "   $step. $instruction"
+        step=$((step + 1))
+    done
+    echo ""
+}
+
+# ============================================================
 # QUÉT TRẠNG THÁI CHỨC NĂNG (phiên bản phân biệt Docker)
 # ============================================================
 scan_features_status() {
