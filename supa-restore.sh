@@ -197,23 +197,6 @@ fi
 
 echo "   ✅ Xác nhận docker-compose.yml đã sẵn sàng."
 
-# Đảm bảo tương thích với môi trường ảo hóa LXC/OpenVZ:
-# Thêm security_opt và cap_add cho các service cố gắng đặt sysctl
-echo "🔧 Đang tối ưu cấu hình cho môi trường ảo hóa..."
-SERVICES_TO_FIX="vector imgproxy db"
-for svc in $SERVICES_TO_FIX; do
-    if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
-        # Kiểm tra xem đã có seccomp:unconfined chưa, nếu chưa thì thêm
-        if ! grep -A10 "^  ${svc}:" "$TARGET_DIR/docker-compose.yml" | grep -q "seccomp:unconfined"; then
-            # Thêm security_opt và cap_add vào sau dòng 'image:' của service
-            sudo sed -i "/^  ${svc}:/,/^  [a-z]/{/^    image:/a\    security_opt:\n      - seccomp:unconfined\n    cap_add:\n      - SYS_ADMIN
-            }" "$TARGET_DIR/docker-compose.yml"
-            echo "   ✅ Đã thêm security_opt và cap_add cho service '$svc'"
-        fi
-    fi
-done
-echo "   ✅ Hoàn tất tối ưu cấu hình."
-
 # ------------------------------------------------------------
 # CHUẨN BỊ MÔI TRƯỜNG SẠCH TRƯỚC KHI KHỞI ĐỘNG (CÓ HỎI)
 # ------------------------------------------------------------
@@ -237,7 +220,7 @@ ORPHAN_CONTAINERS=$(docker ps -a --filter "name=supabase" -q 2>/dev/null)
 if [ -n "$ORPHAN_CONTAINERS" ]; then
     echo -e "${YELLOW}⚠️ Tìm thấy các container Supabase cũ (từ lần khôi phục trước).${NC}"
     echo "   Danh sách container sắp bị xóa:"
-    docker ps -a --filter "name=supabase" --format "   .Names\t.Status" 2>/dev/null
+    docker ps -a --filter "name=supabase" --format "   {{.Names}}\t{{.Status}}" 2>/dev/null
     read -p "👉 Bạn có muốn xóa các container này không? (y/n): " confirm_orphan
     if [ "$confirm_orphan" = "y" ]; then
         docker rm -f $ORPHAN_CONTAINERS 2>/dev/null || true
@@ -302,6 +285,38 @@ try_start() {
     return 0
 }
 
+# ---------- HÀM THÊM PRIVILEGED MODE ----------
+add_privileged() {
+    local svc=$1
+    local compose_file="$TARGET_DIR/docker-compose.yml"
+    
+    # Kiểm tra xem service đã có privileged: true chưa
+    # Logic awk: tìm service, kiểm tra xem có dòng privileged: true không trước khi gặp service khác
+    if awk -v svc="$svc" '
+        $0 ~ "^  " svc ":" { found=1; next }
+        found && /^  [a-zA-Z]/ { found=0 }
+        found && /^    privileged: true/ { exit 0 }
+        END { if (found) exit 1; else exit 0 }
+    ' "$compose_file"; then
+        # Chưa có, tiến hành thêm vào sau dòng image: (đầu tiên của service)
+        local tmp_file
+        tmp_file=$(mktemp)
+        awk -v svc="$svc" '
+            BEGIN { in_svc=0; added=0 }
+            $0 ~ "^  " svc ":" { in_svc=1; print; next }
+            in_svc && /^  [a-zA-Z]/ { in_svc=0 }
+            in_svc && !added && /^    image:/ { print; print "    privileged: true"; added=1; next }
+            { print }
+        ' "$compose_file" | sudo tee "$tmp_file" > /dev/null
+        sudo mv "$tmp_file" "$compose_file"
+        echo "   ✅ Đã thêm 'privileged: true' cho service '$svc'"
+        return 0
+    else
+        echo "   ℹ️ Service '$svc' đã có 'privileged: true', bỏ qua."
+        return 1
+    fi
+}
+
 # -------------------------------------------------
 # 5. Cài Docker nếu chưa có
 # -------------------------------------------------
@@ -340,8 +355,54 @@ if try_start; then
 else
     echo -e "${YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
 
+    # ----- XỬ LÝ LỖI SYSCTL (hạ cấp containerd nếu cần) -----
+    if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
+        echo "   🔍 Phát hiện lỗi sysctl do môi trường ảo hóa LXC/OpenVZ."
+        echo "   🧹 Đang dừng mọi container liên quan đến Supabase..."
+        $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
+        docker ps -a --filter "name=supabase" -q | xargs -r docker rm -f 2>/dev/null || true
+
+        # Kiểm tra phiên bản containerd
+        echo "   🔍 Đang kiểm tra phiên bản containerd..."
+        CONTAINERD_VERSION=$(containerd --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
+        echo "   📋 Phiên bản containerd hiện tại: $CONTAINERD_VERSION"
+
+        # Phiên bản có bug: 1.7.28-2 trở lên trên Ubuntu 22.04
+        MIN_BUGGY_VERSION="1.7.28"
+        if dpkg --compare-versions "$CONTAINERD_VERSION" ge "$MIN_BUGGY_VERSION"; then
+            echo -e "${YELLOW}   ⚠️ Phát hiện containerd phiên bản $CONTAINERD_VERSION có thể gây lỗi sysctl.${NC}"
+            echo "   📌 Giải pháp: hạ cấp containerd xuống phiên bản 1.7.28-1 (ổn định cho LXC/OpenVZ)."
+            echo "   Hành động này cần quyền sudo và sẽ tải về khoảng 30MB."
+            read -p "   👉 Bạn có muốn tự động hạ cấp containerd không? (y/n): " downgrade
+            if [ "$downgrade" = "y" ]; then
+                echo "   🔧 Đang hạ cấp containerd..."
+                if sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null; then
+                    echo -e "${GREEN}   ✅ Hạ cấp containerd thành công.${NC}"
+                    sudo apt-mark hold containerd.io 2>/dev/null
+                    echo "   🔄 Đang thử khởi động lại..."
+                    if try_start; then
+                        echo -e "${GREEN}✅ Supabase đã khởi động thành công sau khi hạ cấp containerd.${NC}"
+                        SUPABASE_STARTED=1
+                    else
+                        echo -e "${RED}❌ Vẫn không thể khởi động.${NC}"
+                        echo "   📋 Lỗi mới:"
+                        echo "$LAST_DOCKER_ERR"
+                    fi
+                else
+                    echo -e "${RED}❌ Hạ cấp containerd thất bại. Có thể phiên bản không khả dụng.${NC}"
+                    echo "   Bạn có thể thử cài thủ công:"
+                    echo "   sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble"
+                fi
+            else
+                echo "   ℹ️ Bạn có thể tự hạ cấp containerd sau và chạy lại script."
+            fi
+        else
+            echo "   ℹ️ Phiên bản containerd hiện tại không nằm trong diện bị ảnh hưởng."
+            echo "   👉 Thử thêm 'privileged: true' vào các service vector, imgproxy, db trong docker-compose.yml rồi chạy lại."
+        fi
+        SUPABASE_STARTED=${SUPABASE_STARTED:-0}
     # ----- XỬ LÝ CÁC LỖI KHÁC -----
-    if echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
+    elif echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
         echo -e "${RED}❌ Hết dung lượng ổ đĩa.${NC}"
         exit 1
     elif echo "$LAST_DOCKER_ERR" | grep -q "address already in use"; then
@@ -376,8 +437,8 @@ fi
 # -------------------------------------------------
 echo "⏳ Đang kiểm tra container database..."
 DB_CONT=""
-for i in {1..10}; do
-    DB_CONT=$(docker ps --format '.Names' | grep -E 'supabase.*db|db' | head -1)
+for i in $(seq 1 10); do
+    DB_CONT=$(docker ps --format '{{.Names}}' | grep -E 'supabase.*db|db' | head -1)
     if [ -n "$DB_CONT" ]; then
         if docker exec $DB_CONT pg_isready -U postgres &>/dev/null; then
             echo "✅ Database đã sẵn sàng."

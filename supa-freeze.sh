@@ -213,10 +213,13 @@ echo -e "${GREEN}✅ Backup thành công: $BACKUP_FILE${NC}"
 log_info "Backup thành công: $BACKUP_FILE"
 
 # ------------------------------------------------------------
-# 10. Đồng bộ sang VPS dự phòng (tự động hóa SSH key, hướng dẫn chi tiết)
+# 10. Đồng bộ sang VPS dự phòng (tạo package & gửi cả thư mục)
 # ------------------------------------------------------------
 if [ -n "$REMOTE" ]; then
     echo -e "${CYAN}☁️ Đồng bộ sang $REMOTE...${NC}"
+
+    SSH_OK=0
+    REMOTE_HOME=""
 
     # ---------- Tạo SSH key nếu chưa có ----------
     if [ ! -f ~/.ssh/id_rsa ]; then
@@ -238,16 +241,49 @@ if [ -n "$REMOTE" ]; then
     if [ "$auto_copy_ssh" = "y" ]; then
         echo -e "${CYAN}   Đang copy public key sang $REMOTE...${NC}"
         echo "   Bạn hãy nhập MẬT KHẨU của VPS đích khi được hỏi."
-        if command -v ssh-copy-id >/dev/null 2>&1; then
-            if ssh-copy-id -i ~/.ssh/id_rsa.pub "$REMOTE" 2>/dev/null; then
-                echo -e "${GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
+        echo "   (Nếu nhập sai, bạn sẽ được hỏi lại tối đa 3 lần.)"
+        try_count=0
+        copy_success=0
+        while [ $try_count -lt 3 ]; do
+            if command -v ssh-copy-id >/dev/null 2>&1; then
+                # Ghi log lỗi tạm để hiển thị nếu thất bại
+                if ssh-copy-id -i ~/.ssh/id_rsa.pub "$REMOTE" 2>/tmp/ssh_copy_err_$$; then
+                    echo -e "${GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
+                    copy_success=1
+                    break
+                else
+                    try_count=$((try_count + 1))
+                    if [ $try_count -lt 3 ]; then
+                        echo -e "${YELLOW}   ⚠️ Lần thử thứ $try_count thất bại.${NC}"
+                        echo "   Lỗi: $(cat /tmp/ssh_copy_err_$$ | tail -1)"
+                        read -p "   Bạn có muốn thử lại không? (y/n): " retry_ssh_copy
+                        if [ "$retry_ssh_copy" != "y" ]; then
+                            break
+                        fi
+                    else
+                        echo -e "${YELLOW}   ⚠️ Đã thử 3 lần không thành công.${NC}"
+                        echo "   Lỗi cuối cùng: $(cat /tmp/ssh_copy_err_$$ | tail -1)"
+                    fi
+                fi
             else
-                echo -e "${YELLOW}   ⚠️ Không thể copy tự động (có thể do chưa có ssh-copy-id hoặc sai mật khẩu).${NC}"
-                echo "   Bạn hãy làm thủ công theo hướng dẫn bên dưới..."
+                echo -e "${YELLOW}   ⚠️ ssh-copy-id không khả dụng trên hệ thống này.${NC}"
+                break
             fi
-        else
-            echo -e "${YELLOW}   ⚠️ ssh-copy-id không khả dụng trên hệ thống này.${NC}"
-            echo "   Bạn hãy làm thủ công theo hướng dẫn bên dưới..."
+        done
+        rm -f /tmp/ssh_copy_err_$$
+
+        if [ $copy_success -eq 0 ]; then
+            echo "   👉 Bạn có thể thử tự copy bằng lệnh thủ công hoặc liên hệ quản trị VPS đích."
+            echo "   📋 Public key của bạn (copy toàn bộ dòng bên dưới):"
+            cat ~/.ssh/id_rsa.pub 2>/dev/null
+            echo ""
+            echo "   🔧 Các bước thêm thủ công:"
+            echo "     1. SSH vào VPS đích bằng mật khẩu (nếu được): ssh $REMOTE"
+            echo "     2. Tạo thư mục .ssh nếu chưa có: mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+            echo "     3. Mở file authorized_keys: nano ~/.ssh/authorized_keys"
+            echo "     4. Dán dòng public key ở trên vào cuối file, lưu và thoát."
+            echo "     5. Đặt quyền: chmod 600 ~/.ssh/authorized_keys"
+            echo "     6. Thoát SSH và thử lại đồng bộ."
         fi
     fi
 
@@ -258,20 +294,13 @@ if [ -n "$REMOTE" ]; then
 
     if [ $SSH_EXIT_CODE -eq 0 ]; then
         # Kết nối thành công, kiểm tra thư mục home
-        if ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'mkdir -p ~/backups && echo "HOME_OK"' 2>/dev/null | grep -q "HOME_OK"; then
-            echo -e "${GREEN}   ✅ Kết nối SSH thành công, thư mục ~/backups đã sẵn sàng.${NC}"
+        REMOTE_HOME=$(ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'echo $HOME' 2>/dev/null)
+        if [ -n "$REMOTE_HOME" ] && ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "test -d '$REMOTE_HOME'" 2>/dev/null; then
+            echo -e "${GREEN}   ✅ Kết nối SSH thành công, thư mục home xác định được: $REMOTE_HOME${NC}"
             SSH_OK=1
         else
-            echo -e "${RED}   ❌ Kết nối SSH được nhưng không thể tạo thư mục ~/backups.${NC}"
-            echo "   Nguyên nhân có thể:"
-            echo "   - Thư mục home của bạn trên VPS đích không tồn tại."
-            echo "   - Bạn không có quyền ghi vào thư mục home."
-            echo ""
-            echo "   👉 Cách khắc phục:"
-            echo "      SSH vào VPS đích và chạy lệnh sau:"
-            echo "      ssh $REMOTE"
-            echo "      mkdir -p ~/backups"
-            echo "      Nếu lệnh mkdir báo lỗi, hãy liên hệ quản trị VPS để tạo thư mục home cho bạn."
+            echo -e "${RED}   ❌ Kết nối SSH được nhưng thư mục home không tồn tại hoặc không thể truy cập.${NC}"
+            echo "   Hãy SSH vào VPS đích và kiểm tra: ssh $REMOTE"
             SSH_OK=0
         fi
     else
@@ -294,14 +323,23 @@ if [ -n "$REMOTE" ]; then
             echo "   - Đảm bảo VPS đích cho phép kết nối từ IP của bạn."
         elif echo "$SSH_ERROR" | grep -q "Permission denied"; then
             echo "   🔍 Lỗi: Permission denied (Quyền truy cập bị từ chối)"
-            echo "   Nguyên nhân: Public key chưa được copy sang VPS đích, hoặc sai mật khẩu."
+            echo "   Nguyên nhân: Public key chưa được copy sang VPS đích, hoặc sai mật khẩu,"
+            echo "   hoặc VPS đích không cho phép xác thực bằng mật khẩu."
             echo "   Cách khắc phục:"
-            echo "   - Chạy lệnh sau để copy public key:"
+            echo "   - Chạy lệnh sau để copy public key (nếu VPS đích cho phép mật khẩu):"
             echo "     ssh-copy-id -i ~/.ssh/id_rsa.pub $REMOTE"
-            echo "   - Hoặc tự thêm public key vào ~/.ssh/authorized_keys trên VPS đích."
+            echo "   - Nếu không, bạn phải tự thêm public key vào file authorized_keys trên VPS đích."
             echo ""
             echo "   📋 Public key của bạn (copy toàn bộ dòng bên dưới):"
             cat ~/.ssh/id_rsa.pub 2>/dev/null
+            echo ""
+            echo "   👉 Các bước thêm thủ công:"
+            echo "     1. SSH vào VPS đích bằng mật khẩu (nếu được): ssh $REMOTE"
+            echo "     2. Tạo thư mục .ssh nếu chưa có: mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+            echo "     3. Mở file authorized_keys: nano ~/.ssh/authorized_keys"
+            echo "     4. Dán dòng public key ở trên vào cuối file, lưu và thoát."
+            echo "     5. Đặt quyền: chmod 600 ~/.ssh/authorized_keys"
+            echo "     6. Thoát SSH và thử lại đồng bộ."
         elif echo "$SSH_ERROR" | grep -q "No route to host"; then
             echo "   🔍 Lỗi: No route to host (Không tìm thấy đường tới máy chủ)"
             echo "   Nguyên nhân: IP sai hoặc VPS đích không tồn tại."
@@ -326,33 +364,48 @@ if [ -n "$REMOTE" ]; then
         SSH_OK=0
     fi
 
-    # ---------- Thực hiện rsync nếu kết nối OK ----------
+    # ---------- Tạo package và gửi nếu kết nối OK ----------
     if [ $SSH_OK -eq 1 ]; then
-        echo -e "${CYAN}   Đang đồng bộ file backup...${NC}"
+        echo -e "${CYAN}   Đang đóng gói và đồng bộ...${NC}"
 
-        # Lấy thư mục home thực tế của user trên VPS đích
-        REMOTE_HOME=$(ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'echo $HOME' 2>/dev/null)
-        if [ -n "$REMOTE_HOME" ] && ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "test -d '$REMOTE_HOME'" 2>/dev/null; then
-            DEST_DIR="${REMOTE_HOME}/backups"
-            echo -e "   📁 Thư mục đích: ${REMOTE}:${DEST_DIR}"
-            # Tạo thư mục đích nếu chưa có
-            ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_DIR'" 2>/dev/null
+        # Tạo thư mục package trên VPS nguồn
+        PACKAGE_DIR="$PROJECT_DIR/$(basename "$BACKUP_FILE" .tar.gz)-package"
+        mkdir -p "$PACKAGE_DIR"
+
+        # Copy file backup vào package
+        cp "$BACKUP_FILE" "$PACKAGE_DIR/"
+
+        # Tạo script giải nén trong package
+        cat > "$PACKAGE_DIR/supa-extract-backup.sh" <<'EXTRACTEOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKUP_FILE="$(ls -t "$SCRIPT_DIR"/supabase-backup-*.tar.gz 2>/dev/null | head -1)"
+if [ -z "$BACKUP_FILE" ]; then
+    echo "❌ Không tìm thấy file backup .tar.gz trong thư mục hiện tại."
+    exit 1
+fi
+echo "📦 Đang giải nén: $(basename "$BACKUP_FILE")"
+tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
+echo "✅ Đã giải nén vào: $SCRIPT_DIR/$(basename "$BACKUP_FILE" .tar.gz)"
+echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz) && sudo bash supa-start.sh"
+EXTRACTEOF
+        chmod +x "$PACKAGE_DIR/supa-extract-backup.sh"
+
+        # Gửi cả thư mục package sang VPS đích
+        DEST_PARENT="${REMOTE_HOME}/supabase_self_host_backup"
+        ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_PARENT'" 2>/dev/null
+
+        if scp -o StrictHostKeyChecking=accept-new -r "$PACKAGE_DIR" "${REMOTE}:${DEST_PARENT}/"; then
+            echo -e "${GREEN}✅ Đồng bộ thành công! Thư mục trên VPS đích: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")${NC}"
+            echo -e "   📜 Script giải nén: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")/supa-extract-backup.sh"
         else
-            # Fallback an toàn: dùng /tmp/backups
-            DEST_DIR="/tmp/backups"
-            echo -e "${YELLOW}   ⚠️ Không xác định được thư mục home. Dùng tạm ${REMOTE}:${DEST_DIR}${NC}"
-            echo "   Lưu ý: File backup sẽ không tồn tại lâu trong /tmp. Bạn nên tự copy ra nơi khác."
-            ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_DIR'" 2>/dev/null
+            echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
+            echo "   Bạn có thể thử tự copy thư mục bằng lệnh scp:"
+            echo "   scp -r $PACKAGE_DIR ${REMOTE}:${DEST_PARENT}/"
         fi
 
-        # Thực hiện rsync với đường dẫn tuyệt đối an toàn
-        if rsync -avz -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_FILE" "${REMOTE}:${DEST_DIR}/"; then
-            echo -e "${GREEN}✅ Đồng bộ thành công! File backup đã ở VPS đích: ${DEST_DIR}/$(basename "$BACKUP_FILE")${NC}"
-        else
-            echo -e "${RED}❌ Đồng bộ thất bại dù SSH đã kết nối được.${NC}"
-            echo "   Bạn có thể thử tự copy file bằng lệnh scp:"
-            echo "   scp $BACKUP_FILE ${REMOTE}:${DEST_DIR}/"
-        fi
+        # Dọn dẹp package trên VPS nguồn (backup gốc vẫn giữ nguyên)
+        rm -rf "$PACKAGE_DIR"
     fi
 fi
 
@@ -376,7 +429,7 @@ if [[ "$1" != "--cron" ]]; then
         if [[ "$SCRIPT_PATH" != /* ]]; then
             SCRIPT_PATH="$(cd "$SCRIPT_DIR" && pwd)/supa-freeze.sh"
         fi
-        CRON_LINE="0 2 * * * $SCRIPT_PATH --cron $PROJECT_DIR"
+        CRON_LINE="0 2 * * * $SCRIPT_PATH --cron $PROJECT_DIR >> /var/log/supabase-backup.log 2>&1"
         (crontab -l 2>/dev/null; echo "$CRON_LINE") | sort -u | crontab -
         echo -e "${GREEN}✅ Cron job đã được thêm. Hệ thống sẽ tự động backup lúc 2h sáng mỗi ngày.${NC}"
         log_info "Đã thêm cron job backup hàng ngày"
