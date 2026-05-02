@@ -7,16 +7,46 @@
 # xử lý lỗi apt lock, dung lượng đĩa, mạng, OS...
 # ==============================================
 
-# ---------- MÀU SẮC ----------
+# ---------- MÀU SẮC CƠ BẢN ----------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m'   # No Color
+WHITE='\033[0;37m'
+NC='\033[0m' # No Color
 
-# ---------- BIẾN TOÀN CỤC ----------
+# ---------- MÀU SẮC MỞ RỘNG ----------
+# Chữ đậm
+BOLD_RED='\033[1;31m'
+BOLD_GREEN='\033[1;32m'
+BOLD_YELLOW='\033[1;33m'
+BOLD_BLUE='\033[1;34m'
+BOLD_MAGENTA='\033[1;35m'
+BOLD_CYAN='\033[1;36m'
+BOLD_WHITE='\033[1;37m'
+
+# Chữ thường (bổ sung các màu còn thiếu hoặc dễ nhầm lẫn)
+ORANGE='\033[0;33m'
+LIGHT_GREEN='\033[1;32m'
+LIGHT_CYAN='\033[1;36m'
+
+# Nền (background)
+BG_RED='\033[41m'
+BG_GREEN='\033[42m'
+BG_YELLOW='\033[43m'
+BG_BLUE='\033[44m'
+BG_MAGENTA='\033[45m'
+BG_CYAN='\033[46m'
+BG_WHITE='\033[47m'
+
+# Định dạng khác
+UNDERLINE='\033[4m'
+BLINK='\033[5m'
+REVERSE='\033[7m'
+
+# ---------- HÀM KIỂM TRA NGƯỜI DÙNG THỰC SỰ ----------
 # Lấy tên người dùng thực, ngay cả khi đang chạy với sudo
 if [ -n "$SUDO_USER" ]; then
     REAL_USER="$SUDO_USER"        # Nếu chạy bằng sudo, SUDO_USER là tên gốc

@@ -11,9 +11,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-echo "======================================"
-echo "  🔧 CẤU HÌNH GOOGLE DRIVE (RCLONE)"
-echo "======================================"
+echo -e "${BOLD_BLUE}======================================${NC}"
+echo -e "${BOLD_BLUE}  🔧 CẤU HÌNH GOOGLE DRIVE (RCLONE)${NC}"
+echo -e "${BOLD_BLUE}======================================${NC}"
 echo ""
 echo "Quá trình này cần bạn có một tài khoản Google và một máy tính có trình duyệt web."
 echo "Bạn có thể thay đổi tài khoản bất cứ lúc nào bằng cách chạy lại chức năng này."
@@ -106,12 +106,11 @@ EOF
         cat /tmp/rclone_gdrive.conf >> ~/.config/rclone/rclone.conf
         chmod 600 ~/.config/rclone/rclone.conf
         rm /tmp/rclone_gdrive.conf
-        echo -e "${GREEN}✅ Cấu hình Google Drive thành công!${NC}"
+        echo -e "${BOLD_GREEN}✅ Cấu hình Google Drive thành công!${NC}"
         return 0
     else
-        echo -e "${RED}❌ Token không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.${NC}"
-        echo "   Lưu ý: Bạn phải copy TOÀN BỘ đoạn JSON (bao gồm cả dấu { }),"
-        echo "   và đảm bảo token vừa được tạo trong vòng 1 giờ."
+        echo -e "${BOLD_RED}❌ Token không hợp lệ hoặc đã hết hạn.${NC}"
+        echo "   Bạn cần tạo token mới để tiếp tục."
         rm /tmp/rclone_gdrive.conf
         return 1
     fi
@@ -134,7 +133,7 @@ done
 rclone mkdir gdrive:supabase-backups 2>/dev/null || true
 
 echo ""
-echo "🎉 Từ bây giờ bạn có thể chọn upload backup lên Google Drive khi Đóng băng hệ thống."
+echo -e "${BOLD_GREEN}🎉 Từ bây giờ bạn có thể chọn upload backup lên Google Drive khi Đóng băng hệ thống.${NC}"
 echo "   File backup sẽ được lưu trong thư mục 'supabase-backups' trên Google Drive của bạn."
 echo "   Để khôi phục từ file đó, hãy dùng chức năng Restore trong menu và nhập:"
 echo "   gdrive:supabase-backups/tên-file-backup.tar.gz"

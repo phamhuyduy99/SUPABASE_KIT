@@ -11,25 +11,31 @@ source "$SCRIPT_DIR/common.sh"
 
 log_info "Bắt đầu quá trình khôi phục Supabase"
 
-echo -e "${BOLD}${CYAN}======================================${NC}"
-echo -e "${BOLD}${CYAN}  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE${NC}"
-echo -e "${BOLD}${CYAN}======================================${NC}"
+echo -e "${BOLD_BLUE}======================================${NC}"
+echo -e "${BOLD_BLUE}  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE${NC}"
+echo -e "${BOLD_BLUE}======================================${NC}"
+
+# Kiểm tra xem có backup data trong thư mục hiện tại không
+if [ -f "backup_data.tar.gz" ]; then
+    echo -e "${BOLD_YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
+    BACKUP_FILE="backup_data.tar.gz"
+fi
 
 # -------------------------------------------------
 # 1. Kiểm tra backup_data đính kèm
 # -------------------------------------------------
 USE_EMBEDDED="n"
 if [ -d "$SCRIPT_DIR/backup_data" ]; then
-    echo -e "${YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
+    echo -e "${BOLD_YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
     read -p "👉 Bạn có muốn dùng dữ liệu này để khôi phục luôn không? (y/n): " USE_EMBEDDED
 fi
 
 if [ "$USE_EMBEDDED" = "y" ]; then
-    echo "✅ Sử dụng dữ liệu backup có sẵn."
+    echo -e "${BOLD_GREEN}✅ Sử dụng dữ liệu backup có sẵn.${NC}"
     BACKUP_DIR="$SCRIPT_DIR/backup_data"
     # Kiểm tra các thành phần cần thiết
     if [ ! -f "$BACKUP_DIR/database/full_backup.sql.gz" ] || [ ! -f "$BACKUP_DIR/config/.env" ] || [ ! -f "$BACKUP_DIR/config/docker-compose.yml" ]; then
-        echo -e "${RED}❌ Dữ liệu backup không đầy đủ. Không thể tiếp tục.${NC}"
+        echo -e "${BOLD_RED}❌ Dữ liệu backup không đầy đủ. Không thể tiếp tục.${NC}"
         exit 1
     fi
 else
@@ -39,26 +45,26 @@ else
         if [[ "$SRC" =~ ^gdrive: ]]; then
             # Đảm bảo rclone đã cài và có remote gdrive
             if ! command -v rclone &> /dev/null; then
-                echo -e "${YELLOW}rclone chưa cài đặt. Đang thử cài đặt...${NC}"
+                echo -e "${BOLD_YELLOW}rclone chưa cài đặt. Đang thử cài đặt...${NC}"
                 if ! ensure_rclone_gdrive; then
-                    echo -e "${RED}Không thể cài rclone. Vui lòng cài thủ công hoặc chọn nguồn backup khác.${NC}"
+                    echo -e "${BOLD_RED}Không thể cài rclone. Vui lòng cài thủ công hoặc chọn nguồn backup khác.${NC}"
                     continue
                 fi
             fi
             # Kiểm tra remote gdrive đã có chưa, nếu chưa thì gợi ý cấu hình
             if ! rclone listremotes | grep -q "^gdrive:"; then
-                echo -e "${YELLOW}Remote 'gdrive' chưa được cấu hình.${NC}"
+                echo -e "${BOLD_YELLOW}Remote 'gdrive' chưa được cấu hình.${NC}"
                 read -p "Bạn có muốn cấu hình ngay không? (y/n): " setup_gdrive
                 if [ "$setup_gdrive" = "y" ]; then
                     # Gọi script chuyên dụng thay vì rclone config thô
                     if [ -f "$SCRIPT_DIR/supa-setup-gdrive.sh" ]; then
                         bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
                     else
-                        echo -e "${RED}Không tìm thấy script cấu hình Google Drive.${NC}"
+                        echo -e "${BOLD_RED}Không tìm thấy script cấu hình Google Drive.${NC}"
                     fi
                 fi
                 if ! rclone listremotes | grep -q "^gdrive:"; then
-                    echo -e "${RED}Chưa cấu hình Google Drive. Vui lòng thử lại sau khi cấu hình.${NC}"
+                    echo -e "${BOLD_RED}Chưa cấu hình Google Drive. Vui lòng thử lại sau khi cấu hình.${NC}"
                     continue
                 fi
             fi
@@ -78,18 +84,18 @@ else
                         break
                     fi
                 fi
-                echo -e "${RED}❌ Không thể tải file từ Google Drive. Vui lòng thử lại.${NC}"
+                echo -e "${BOLD_RED}❌ Không thể tải file từ Google Drive. Vui lòng thử lại.${NC}"
                 continue
             fi
 
             # Kiểm tra file tải về có thực sự là file hợp lệ không
             if [ ! -f "$LOCAL_FILE" ]; then
-                echo -e "${RED}File tải về không tồn tại hoặc là thư mục.${NC}"
+                echo -e "${BOLD_RED}File tải về không tồn tại hoặc là thư mục.${NC}"
                 log_error "Tải từ Google Drive thất bại: $LOCAL_FILE không phải là file hợp lệ"
                 continue
             fi
             if [ ! -s "$LOCAL_FILE" ]; then
-                echo -e "${RED}File tải về rỗng (0 byte).${NC}"
+                echo -e "${BOLD_RED}File tải về rỗng (0 byte).${NC}"
                 log_error "File tải về rỗng: $LOCAL_FILE"
                 continue
             fi
@@ -102,7 +108,7 @@ else
             LOCAL_FILE="/tmp/restore-backup-$$.tar.gz"
             rm -rf "$LOCAL_FILE"
             wget -O "$LOCAL_FILE" "$SRC" && BACKUP_FILE="$LOCAL_FILE" && break
-            echo -e "${RED}Tải thất bại. Kiểm tra URL.${NC}"
+            echo -e "${BOLD_RED}Tải thất bại. Kiểm tra URL.${NC}"
         else
             if validate_backup_file "$SRC"; then
                 BACKUP_FILE="$SRC"
@@ -115,7 +121,7 @@ else
     if [ -f "${BACKUP_FILE}.sha256" ]; then
         echo "🔍 Đang kiểm tra tính toàn vẹn file backup..."
         if ! sha256sum -c "${BACKUP_FILE}.sha256" --quiet 2>/dev/null; then
-            echo -e "${RED}❌ File backup bị hỏng hoặc không toàn vẹn!${NC}"
+            echo -e "${BOLD_RED}❌ File backup bị hỏng hoặc không toàn vẹn!${NC}"
             exit 1
         fi
         echo "✅ File backup hợp lệ."
@@ -127,14 +133,14 @@ else
     echo "📦 Giải nén backup vào $TMP_DIR..."
     tar xzf "$BACKUP_FILE" -C "$TMP_DIR" || { 
         log_error "Giải nén backup thất bại: $BACKUP_FILE"
-        echo -e "${RED}Lỗi giải nén.${NC}"; exit 1; 
+        echo -e "${BOLD_RED}Lỗi giải nén.${NC}"; exit 1; 
     }
     # Lấy thư mục con đầu tiên (tên thư mục gốc trong backup)
     EXTRACTED_DIR=$(ls -1 "$TMP_DIR" | head -1)
     BACKUP_DIR="$TMP_DIR/$EXTRACTED_DIR/backup_data"
     if [ ! -d "$BACKUP_DIR" ]; then
         log_error "Backup không chứa thư mục backup_data: $BACKUP_FILE"
-        echo -e "${RED}❌ File backup không chứa backup_data.${NC}"
+        echo -e "${BOLD_RED}❌ File backup không chứa backup_data.${NC}"
         rm -rf "$TMP_DIR"
         exit 1
     fi
@@ -167,20 +173,16 @@ cd "$TARGET_DIR"
 # -------------------------------------------------
 echo "📋 Sao chép cấu hình..."
 # Copy .env
-if cp "$BACKUP_DIR/config/.env" "$TARGET_DIR/"; then
+if [ -f "$BACKUP_DIR/config/.env" ]; then
+    cp "$BACKUP_DIR/config/.env" "$TARGET_DIR/"
     echo "   ✅ .env đã được sao chép."
-else
-    echo -e "${RED}❌ Không thể sao chép .env vào $TARGET_DIR. Kiểm tra quyền ghi.${NC}"
-    echo "   Bạn có thể thử tự copy bằng lệnh:"
-    echo "   sudo cp $BACKUP_DIR/config/.env $TARGET_DIR/"
-    exit 1
 fi
 
 # Copy docker-compose.yml
 if cp "$BACKUP_DIR/config/docker-compose.yml" "$TARGET_DIR/"; then
     echo "   ✅ docker-compose.yml đã được sao chép."
 else
-    echo -e "${RED}❌ Không thể sao chép docker-compose.yml vào $TARGET_DIR. Kiểm tra quyền ghi.${NC}"
+    echo -e "${BOLD_RED}❌ Không thể sao chép docker-compose.yml vào $TARGET_DIR. Kiểm tra quyền ghi.${NC}"
     echo "   Bạn có thể thử tự copy bằng lệnh:"
     echo "   sudo cp $BACKUP_DIR/config/docker-compose.yml $TARGET_DIR/"
     exit 1
@@ -188,7 +190,7 @@ fi
 
 # Kiểm tra sự tồn tại của file docker-compose.yml sau khi copy
 if [ ! -f "$TARGET_DIR/docker-compose.yml" ]; then
-    echo -e "${RED}❌ File docker-compose.yml không tồn tại trong $TARGET_DIR sau khi copy.${NC}"
+    echo -e "${BOLD_RED}❌ File docker-compose.yml không tồn tại trong $TARGET_DIR sau khi copy.${NC}"
     echo "   Điều này có thể do hết dung lượng đĩa hoặc lỗi hệ thống."
     echo "   Vui lòng kiểm tra và thử lại, hoặc copy thủ công:"
     echo "   cp $BACKUP_DIR/config/docker-compose.yml $TARGET_DIR/"
@@ -204,7 +206,7 @@ echo "🧹 Đang kiểm tra container Supabase cũ..."
 
 # 1. Kiểm tra container trong dự án hiện tại (dùng compose file)
 if $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" ps -q 2>/dev/null | grep -q .; then
-    echo -e "${YELLOW}⚠️ Phát hiện container Supabase đang chạy từ thư mục $TARGET_DIR.${NC}"
+    echo -e "${BOLD_YELLOW}⚠️ Phát hiện container Supabase đang chạy từ thư mục $TARGET_DIR.${NC}"
     read -p "👉 Bạn có muốn dừng và xóa chúng để khôi phục mới không? (y/n): " confirm_clean
     if [ "$confirm_clean" = "y" ]; then
         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
@@ -218,7 +220,7 @@ fi
 # 2. Kiểm tra container cũ (tên chứa "supabase" nhưng không thuộc compose trên)
 ORPHAN_CONTAINERS=$(docker ps -a --filter "name=supabase" -q 2>/dev/null)
 if [ -n "$ORPHAN_CONTAINERS" ]; then
-    echo -e "${YELLOW}⚠️ Tìm thấy các container Supabase cũ (từ lần khôi phục trước).${NC}"
+    echo -e "${BOLD_YELLOW}⚠️ Tìm thấy các container Supabase cũ (từ lần khôi phục trước).${NC}"
     echo "   Danh sách container sắp bị xóa:"
     docker ps -a --filter "name=supabase" --format "   {{.Names}}\t{{.Status}}" 2>/dev/null
     read -p "👉 Bạn có muốn xóa các container này không? (y/n): " confirm_orphan
@@ -239,7 +241,7 @@ if [ -n "$SYSCTL_FILES" ]; then
         if sudo sed -i '/ip_unprivileged_port_start/d' "$f" 2>/dev/null; then
             echo "   ✅ Đã xóa dòng sysctl khỏi $f"
         else
-            echo -e "${YELLOW}   ⚠️ Không thể tự động sửa file $f (thiếu quyền sudo?).${NC}"
+            echo -e "${BOLD_YELLOW}   ⚠️ Không thể tự động sửa file $f (thiếu quyền sudo?).${NC}"
             echo "   👉 Bạn hãy tự mở file: sudo nano $f"
             echo "      Tìm và xóa dòng chứa 'ip_unprivileged_port_start', lưu lại và thoát."
             read -p "   Nhấn Enter sau khi đã sửa xong (hoặc nhập 'skip' để bỏ qua): " user_choice
@@ -262,9 +264,9 @@ if [ -d "$BACKUP_DIR/volumes" ] && [ "$(ls -A "$BACKUP_DIR/volumes" 2>/dev/null)
     echo "✅ Volumes đã được phục hồi (bao gồm functions, db/init, api...)."
 elif [ -f "$BACKUP_DIR/config/volumes.tar.gz" ]; then
     echo "📂 Giải nén volumes từ backup..."
-    tar xzf "$BACKUP_DIR/config/volumes.tar.gz" -C "$TARGET_DIR/" 2>/dev/null || echo -e "${YELLOW}⚠️ Một số file volumes không được giải nén (có thể thiếu quyền).${NC}"
+    tar xzf "$BACKUP_DIR/config/volumes.tar.gz" -C "$TARGET_DIR/" 2>/dev/null || echo -e "${BOLD_YELLOW}⚠️ Một số file volumes không được giải nén (có thể thiếu quyền).${NC}"
 else
-    echo -e "${YELLOW}⚠️ Không tìm thấy dữ liệu volumes trong backup.${NC}"
+    echo -e "${BOLD_YELLOW}⚠️ Không tìm thấy dữ liệu volumes trong backup.${NC}"
 fi
 
 # ---------- HÀM THỬ KHỞI ĐỘNG (sửa lỗi mất log) ----------
@@ -335,7 +337,7 @@ if ! command -v docker &> /dev/null; then
     sudo apt update && sudo apt install -y docker.io docker-compose-v2
     sudo systemctl enable --now docker
     if ! groups $REAL_USER | grep -q docker; then
-        echo -e "${YELLOW}⚠️ Thêm user '$REAL_USER' vào group docker để dùng không cần sudo.${NC}"
+        echo -e "${BOLD_YELLOW}⚠️ Thêm user '$REAL_USER' vào group docker để dùng không cần sudo.${NC}"
         echo "   sudo usermod -aG docker $REAL_USER"
     fi
     log_info "Docker đã được cài đặt (nếu cần)"
@@ -350,7 +352,7 @@ echo "🚀 Khởi động Supabase..."
 
 # Kiểm tra dung lượng đĩa trước khi khởi động (cần ít nhất 500MB trống)
 if ! check_disk_space 500 "$TARGET_DIR"; then
-    echo -e "${RED}❌ Không đủ dung lượng đĩa để khởi động Supabase.${NC}"
+    echo -e "${BOLD_RED}❌ Không đủ dung lượng đĩa để khởi động Supabase.${NC}"
     echo "   Hãy giải phóng bớt dung lượng hoặc mở rộng ổ đĩa."
     exit 1
 fi
@@ -358,10 +360,10 @@ fi
 # ---------- LẦN 1 ----------
 SUPABASE_STARTED=0
 if try_start; then
-    echo -e "${GREEN}✅ Supabase khởi động thành công.${NC}"
+    echo -e "${BOLD_GREEN}✅ Supabase khởi động thành công.${NC}"
     SUPABASE_STARTED=1
 else
-    echo -e "${YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
+    echo -e "${BOLD_YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
 
     # ----- XỬ LÝ LỖI SYSCTL VỚI 20 CHIẾN LƯỢC & TỰ ĐỘNG KHÔI PHỤC FILE -----
     if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
@@ -386,10 +388,10 @@ else
 
         # Nếu file hiện tại đang hỏng, khôi phục ngay
         if ! is_yaml_valid; then
-            echo -e "${YELLOW}   ⚠️ File docker-compose.yml hiện tại không hợp lệ. Tự động khôi phục từ bản sao lưu...${NC}"
+            echo -e "${BOLD_YELLOW}   ⚠️ File docker-compose.yml hiện tại không hợp lệ. Tự động khôi phục từ bản sao lưu...${NC}"
             cp "$ORIGINAL_COMPOSE" "$TARGET_DIR/docker-compose.yml"
             if ! is_yaml_valid; then
-                echo -e "${RED}   ❌ File sao lưu cũng không hợp lệ. Vui lòng lấy lại file docker-compose.yml gốc từ backup.${NC}"
+                echo -e "${BOLD_RED}   ❌ File sao lưu cũng không hợp lệ. Vui lòng lấy lại file docker-compose.yml gốc từ backup.${NC}"
                 echo "   Bạn có thể thử copy từ $BACKUP_DIR/config/docker-compose.yml"
                 exit 1
             fi
@@ -402,18 +404,18 @@ else
         while [ $SUPABASE_STARTED -eq 0 ] && [ $strategy -le $max_strategies ]; do
             # Trước mỗi chiến lược, kiểm tra và khôi phục nếu file hỏng
             if ! is_yaml_valid; then
-                echo -e "${YELLOW}   ⚠️ File docker-compose.yml đang bị lỗi cú pháp, tự động khôi phục...${NC}"
+                echo -e "${BOLD_YELLOW}   ⚠️ File docker-compose.yml đang bị lỗi cú pháp, tự động khôi phục...${NC}"
                 cp "$ORIGINAL_COMPOSE" "$TARGET_DIR/docker-compose.yml"
                 if ! is_yaml_valid; then
-                    echo -e "${RED}   ❌ Không thể khôi phục file. Hãy kiểm tra thủ công.${NC}"
+                    echo -e "${BOLD_RED}   ❌ Không thể khôi phục file. Hãy kiểm tra thủ công.${NC}"
                     break
                 fi
             fi
 
-            echo "   🔧 Chiến lược ${strategy}/${max_strategies}:"
+            echo "   🔧 ${BOLD_CYAN}Chiến lược ${strategy}/${max_strategies}:${NC}"
             case $strategy in
                 1)
-                    echo "      Đang xóa dòng sysctl trong docker-compose.yml..."
+                    echo "      ${WHITE}Đang xóa dòng sysctl trong docker-compose.yml...${NC}"
                     if grep -q "ip_unprivileged_port_start" "$TARGET_DIR/docker-compose.yml"; then
                         cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
                         sudo sed -i '/ip_unprivileged_port_start/d' "$TARGET_DIR/docker-compose.yml"
@@ -421,7 +423,7 @@ else
                             echo "      ✅ Đã xóa dòng sysctl."
                             if try_start; then SUPABASE_STARTED=1; break; fi
                         else
-                            echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
+                            echo -e "   ${BOLD_RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                             cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                         fi
                     else
@@ -429,7 +431,7 @@ else
                     fi
                     ;;
                 2)
-                    echo "      Đang thêm privileged: true cho vector, imgproxy, db..."
+                    echo "      ${WHITE}Đang thêm privileged: true cho vector, imgproxy, db...${NC}"
                     cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
                     for svc in vector imgproxy db; do
                         if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
@@ -449,12 +451,12 @@ else
                         echo "      ✅ Đã thêm privileged: true."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
+                        echo -e "   ${BOLD_RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
                 3)
-                    echo "      Đang thêm security_opt và cap_add (đảm bảo không trùng)..."
+                    echo "      ${WHITE}Đang thêm security_opt và cap_add (đảm bảo không trùng)...${NC}"
                     cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
                     for svc in vector imgproxy db; do
                         if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
@@ -482,13 +484,13 @@ else
                     if is_yaml_valid; then
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
+                        echo -e "   ${BOLD_RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
                 4)
-                    echo "      Cấu hình Docker daemon..."
-                    echo -e "${YELLOW}      Hành động này cần sudo và khởi động lại Docker.${NC}"
+                    echo "      ${WHITE}Cấu hình Docker daemon...${NC}"
+                    echo -e "${BOLD_YELLOW}      Hành động này cần sudo và khởi động lại Docker.${NC}"
                     read -p "      👉 Tiếp tục? (y/n): " ans
                     if [ "$ans" = "y" ]; then
                         [ ! -f /etc/docker/daemon.json ] && echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null
@@ -507,10 +509,10 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     fi
                     ;;
                 5)
-                    echo "      Hạ cấp containerd..."
+                    echo "      ${WHITE}Hạ cấp containerd...${NC}"
                     CONTAINERD_VERSION=$(containerd --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
                     if dpkg --compare-versions "$CONTAINERD_VERSION" ge "2.0"; then
-                        echo -e "${YELLOW}      Phiên bản containerd $CONTAINERD_VERSION có thể gây lỗi.${NC}"
+                        echo -e "${BOLD_YELLOW}      Phiên bản containerd $CONTAINERD_VERSION có thể gây lỗi.${NC}"
                         read -p "      👉 Hạ cấp? (y/n): " ans
                         if [ "$ans" = "y" ]; then
                             if sudo apt update && sudo apt install -y --allow-downgrades containerd.io=1.7.28-1~ubuntu.22.04~noble 2>/dev/null; then
@@ -519,7 +521,7 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                                 sleep 5
                                 if try_start; then SUPABASE_STARTED=1; break; fi
                             else
-                                echo -e "   ${RED}❌ Hạ cấp containerd thất bại, tiếp tục chiến lược khác.${NC}"
+                                echo -e "   ${BOLD_RED}❌ Hạ cấp containerd thất bại, tiếp tục chiến lược khác.${NC}"
                             fi
                         fi
                     else
@@ -527,25 +529,25 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     fi
                     ;;
                 6)
-                    echo "      Thử dùng image Supabase phiên bản cũ hơn..."
+                    echo "      ${WHITE}Thử dùng image Supabase phiên bản cũ hơn...${NC}"
                     cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
                     sudo sed -i 's/:latest/:v0.23.11/g' "$TARGET_DIR/docker-compose.yml"
                     if is_yaml_valid; then
                         echo "      ✅ Đã đổi tag image."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
+                        echo -e "   ${BOLD_RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
                 7)
-                    echo "      Hướng dẫn thử runtime khác..."
+                    echo "      ${WHITE}Hướng dẫn thử runtime khác...${NC}"
                     echo "      📝 Cài đặt sysbox/nvidia-runtime, thêm 'runtime: sysbox-runc' vào compose."
                     read -p "      👉 Bạn đã thử chưa? (y/n): " ans
                     [ "$ans" = "y" ] && try_start && SUPABASE_STARTED=1 && break
                     ;;
                 8)
-                    echo "      Kiểm tra AppArmor/SELinux..."
+                    echo "      ${WHITE}Kiểm tra AppArmor/SELinux...${NC}"
                     if command -v aa-status &>/dev/null && aa-status --enabled 2>/dev/null; then
                         read -p "      👉 Vô hiệu hóa AppArmor? (y/n): " ans
                         [ "$ans" = "y" ] && sudo aa-teardown && try_start && SUPABASE_STARTED=1 && break
@@ -556,17 +558,17 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     fi
                     ;;
                 9)
-                    echo "      Yêu cầu nhà cung cấp VPS bật nesting..."
+                    echo "      ${WHITE}Yêu cầu nhà cung cấp VPS bật nesting...${NC}"
                     echo "      📝 Liên hệ support, yêu cầu 'enable nesting' hoặc 'lxc.apparmor.profile=unconfined'."
                     read -p "      👉 Đã liên hệ? (y/n): " ans
                     [ "$ans" = "y" ] && try_start && SUPABASE_STARTED=1 && break
                     ;;
                 10)
-                    echo "      Chuyển sang VPS KVM..."
+                    echo "      ${WHITE}Chuyển sang VPS KVM...${NC}"
                     echo "      💡 DigitalOcean, Linode, AWS EC2 đều dùng KVM, tương thích hoàn toàn."
                     ;;
                 11)
-                    echo "      Thử thêm sysctls thủ công vào docker-compose.yml với giá trị hợp lệ."
+                    echo "      ${WHITE}Thử thêm sysctls thủ công vào docker-compose.yml với giá trị hợp lệ.${NC}"
                     cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
                     for svc in vector imgproxy db; do
                         if grep -q "^  ${svc}:" "$TARGET_DIR/docker-compose.yml"; then
@@ -583,18 +585,18 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     if is_yaml_valid; then
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo -e "   ${RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
+                        echo -e "   ${BOLD_RED}❌ Sửa làm hỏng file, khôi phục...${NC}"
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
                 12)
-                    echo "      Thử đặt biến môi trường trong .env để bỏ qua sysctl."
+                    echo "      ${WHITE}Thử đặt biến môi trường trong .env để bỏ qua sysctl.${NC}"
                     grep -q "^COMPOSE_IGNORE_ORPHANS" "$TARGET_DIR/.env" || echo "COMPOSE_IGNORE_ORPHANS=True" >> "$TARGET_DIR/.env"
                     export COMPOSE_IGNORE_ORPHANS=True
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     ;;
                 13)
-                    echo "      Thử khởi động riêng từng service."
+                    echo "      ${WHITE}Thử khởi động riêng từng service.${NC}"
                     for svc in db imgproxy vector; do
                         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d "$svc" 2>/dev/null || true
                     done
@@ -603,13 +605,13 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     echo "      ✅ Đã thử khởi động riêng từng service."
                     ;;
                 14)
-                    echo "      Thử xóa toàn bộ volumes và networks cũ."
+                    echo "      ${WHITE}Thử xóa toàn bộ volumes và networks cũ.${NC}"
                     docker system prune -af --volumes 2>/dev/null || true
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     echo "      ✅ Đã dọn dẹp toàn bộ volumes và networks cũ."
                     ;;
                 15)
-                    echo "      Thử sử dụng Docker Compose V1 (docker-compose) thay vì V2."
+                    echo "      ${WHITE}Thử sử dụng Docker Compose V1 (docker-compose) thay vì V2.${NC}"
                     if command -v docker-compose &>/dev/null; then
                         $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" down 2>/dev/null
                         docker-compose -f "$TARGET_DIR/docker-compose.yml" up -d 2>/dev/null
@@ -620,15 +622,15 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     fi
                     ;;
                 16)
-                    echo "      Thử khởi động với cờ '--compatibility'."
+                    echo "      ${WHITE}Thử khởi động với cờ '--compatibility'.${NC}"
                     $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" --compatibility up -d 2>/dev/null
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     echo "      ✅ Đã thử khởi động với cờ '--compatibility'."
                     ;;
                 17)
-                    echo "      Cập nhật Docker lên phiên bản mới nhất."
+                    echo "      ${WHITE}Cập nhật Docker lên phiên bản mới nhất.${NC}"
                     if command -v docker &>/dev/null; then
-                        echo -e "${YELLOW}      Cần quyền sudo để cập nhật Docker.${NC}"
+                        echo -e "${BOLD_YELLOW}      Cần quyền sudo để cập nhật Docker.${NC}"
                         read -p "      👉 Bạn có muốn tiếp tục không? (y/n): " ans
                         if [ "$ans" = "y" ]; then
                             sudo apt update && sudo apt install -y docker.io docker-compose-v2
@@ -641,14 +643,14 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     fi
                     ;;
                 18)
-                    echo "      Đăng ký lại dịch vụ systemd cho Docker."
+                    echo "      ${WHITE}Đăng ký lại dịch vụ systemd cho Docker.${NC}"
                     sudo systemctl enable docker
                     sudo systemctl restart docker
                     sleep 5
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     ;;
                 19)
-                    echo "      Tạo một file docker-compose tối thiểu chỉ chứa các service cần sysctl."
+                    echo "      ${WHITE}Tạo một file docker-compose tối thiểu chỉ chứa các service cần sysctl.${NC}"
                     MINIMAL_COMPOSE="/tmp/minimal-docker-compose.yml"
                     awk '/^  (vector|imgproxy|db):/ { found=1 } found { print } /^  [a-z]/ && !/^  (vector|imgproxy|db):/ { found=0 }' "$TARGET_DIR/docker-compose.yml" > "$MINIMAL_COMPOSE"
                     $DOCKER_COMPOSE_CMD -f "$MINIMAL_COMPOSE" up -d 2>/dev/null || true
@@ -657,13 +659,13 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     echo "      ✅ Đã thử với file docker-compose tối thiểu."
                     ;;
                 20)
-                    echo "      Đề xuất cuối cùng: Sử dụng giải pháp Supabase Cloud."
+                    echo "      ${WHITE}Đề xuất cuối cùng: Sử dụng giải pháp Supabase Cloud.${NC}"
                     echo "      🌐 Nếu tất cả các cách trên đều không khắc phục được,"
                     echo "      bạn có thể xem xét sử dụng Supabase Cloud để tránh các vấn đề về hạ tầng."
                     echo "      📞 Liên hệ chúng tôi để được hỗ trợ di chuyển lên cloud."
                     ;;
                 21)
-                    echo "      Vô hiệu hóa TẤT CẢ sysctl trong docker-compose.yml..."
+                    echo "      ${WHITE}Vô hiệu hóa TẤT CẢ sysctl trong docker-compose.yml...${NC}"
                     cp "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak"
                     # Xóa mọi dòng chứa 'sysctls:' hoặc bắt đầu bằng '      - net.'
                     sudo sed -i '/sysctls:/d; /^[[:space:]]*- net\./d' "$TARGET_DIR/docker-compose.yml"
@@ -676,12 +678,12 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     fi
                     ;;
                 22)
-                    echo "      Thử khởi động với '--no-healthcheck' và không phụ thuộc..."
+                    echo "      ${WHITE}Thử khởi động với '--no-healthcheck' và không phụ thuộc...${NC}"
                     $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps --no-healthcheck 2>/dev/null || true
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     ;;
                 23)
-                    echo "      Thử sử dụng 'docker run' trực tiếp cho từng service..."
+                    echo "      ${WHITE}Thử sử dụng 'docker run' trực tiếp cho từng service...${NC}"
                     # Lấy image của vector, imgproxy, db từ compose và chạy thủ công với privileged
                     for svc in vector imgproxy db; do
                         img=$(awk -v svc="$svc" '$0~"^  "svc":"{found=1} found&&/image:/{print $2; exit}' "$TARGET_DIR/docker-compose.yml")
@@ -690,12 +692,12 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     ;;
                 24)
-                    echo "      Đề xuất: Liên hệ nhà cung cấp VPS để sửa AppArmor/profile."
+                    echo "      ${WHITE}Đề xuất: Liên hệ nhà cung cấp VPS để sửa AppArmor/profile.${NC}"
                     echo "      Yêu cầu họ chạy: sudo aa-teardown && sudo apparmor_parser -R /etc/apparmor.d/unprivileged_userns"
                     echo "      Hoặc thiết lập profile unconfined cho container của bạn."
                     ;;
                 25)
-                    echo "      Giải pháp cuối cùng: Sử dụng Docker trong Docker (dind) hoặc máy ảo."
+                    echo "      ${WHITE}Giải pháp cuối cùng: Sử dụng Docker trong Docker (dind) hoặc máy ảo.${NC}"
                     echo "      📝 Bạn có thể cài đặt một máy ảo nhỏ (KVM) trong VPS hiện tại và chạy Supabase trên đó."
                     echo "      📞 Liên hệ hỗ trợ để được hướng dẫn chi tiết."
                     ;;
@@ -704,21 +706,23 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
         done
 
         if [ $SUPABASE_STARTED -eq 0 ]; then
-            echo -e "${RED}❌ Đã thử $max_strategies chiến lược nhưng vẫn không khắc phục được.${NC}"
+            echo -e "${BOLD_RED}❌ Đã thử $max_strategies chiến lược nhưng vẫn không khắc phục được.${NC}"
+        else
+            echo -e "${BOLD_GREEN}✅ Supabase đã khởi động thành công!${NC}"
         fi
         # Bật lại set -e sau khi đã xử lý xong sysctl
         set -e
     # ----- XỬ LÝ CÁC LỖI KHÁC -----
     elif echo "$LAST_DOCKER_ERR" | grep -q "no space left on device"; then
-        echo -e "${RED}❌ Hết dung lượng ổ đĩa.${NC}"
+        echo -e "${BOLD_RED}❌ Hết dung lượng ổ đĩa.${NC}"
         exit 1
     elif echo "$LAST_DOCKER_ERR" | grep -q "address already in use"; then
-        echo -e "${RED}❌ Cổng bị chiếm.${NC}"
+        echo -e "${BOLD_RED}❌ Cổng bị chiếm.${NC}"
         exit 1
     elif echo "$LAST_DOCKER_ERR" | grep -q "permission denied"; then
-        echo -e "${RED}❌ Lỗi quyền truy cập thư mục volumes.${NC}"
+        echo -e "${BOLD_RED}❌ Lỗi quyền truy cập thư mục volumes.${NC}"
     else
-        echo -e "${YELLOW}⚠️ Lỗi không xác định. Dưới đây là log chi tiết:${NC}"
+        echo -e "${BOLD_YELLOW}⚠️ Lỗi không xác định. Dưới đây là log chi tiết:${NC}"
         echo "$LAST_DOCKER_ERR"
     fi
 fi
@@ -728,7 +732,7 @@ fi
 # -------------------------------------------------
 if [ $SUPABASE_STARTED -eq 0 ]; then
     echo ""
-    echo -e "${YELLOW}Không thể khởi động Supabase, nhưng bạn vẫn có thể phục hồi dữ liệu nếu container database đang chạy.${NC}"
+    echo -e "${BOLD_YELLOW}Không thể khởi động Supabase, nhưng bạn vẫn có thể phục hồi dữ liệu nếu container database đang chạy.${NC}"
     echo "Bạn có 2 lựa chọn:"
     echo "1. Tự khởi động Supabase thủ công, sau đó chạy lại script này để import database & storage."
     echo "2. Tiếp tục import database & storage NGAY BÂY GIỜ (chỉ hiệu quả nếu container database đang chạy)."
@@ -757,7 +761,7 @@ done
 echo ""
 
 if [ -z "$DB_CONT" ]; then
-    echo -e "${RED}❌ Không tìm thấy container database đang chạy.${NC}"
+    echo -e "${BOLD_RED}❌ Không tìm thấy container database đang chạy.${NC}"
     echo "   Bạn cần khởi động Supabase trước khi import dữ liệu."
     echo "   Hãy thử chạy lệnh sau:"
     echo "   cd $TARGET_DIR && sudo $DOCKER_COMPOSE_CMD -f docker-compose.yml up -d"
@@ -1012,7 +1016,7 @@ if [ -n "$DOMAIN" ]; then
     PORT80=$(check_port 80)
     PORT443=$(check_port 443)
     if [[ "$PORT80" == DOCKER* ]] || [[ "$PORT443" == DOCKER* ]]; then
-        echo -e "${YELLOW}Phát hiện container Docker chiếm cổng.${NC}"
+        echo -e "${BOLD_YELLOW}Phát hiện container Docker chiếm cổng.${NC}"
         read -p "Dừng để cài Nginx? (y/n): " stop_ans
         if [ "$stop_ans" = "y" ]; then
             for cont in $(echo "$PORT80" "$PORT443" | grep -Po 'DOCKER\|\K[^|]+' | sort -u); do docker stop $cont && docker rm $cont; done
@@ -1020,7 +1024,7 @@ if [ -n "$DOMAIN" ]; then
             echo "Bỏ qua Nginx."
         fi
     elif [[ "$PORT80" != "FREE" ]] || [[ "$PORT443" != "FREE" ]]; then
-        echo -e "${RED}Cổng 80/443 bị chiếm.${NC}"
+        echo -e "${BOLD_RED}Cổng 80/443 bị chiếm.${NC}"
     else
         need_nginx=0; need_certbot=0
         command -v nginx &> /dev/null || need_nginx=1
@@ -1072,25 +1076,20 @@ fi
 # 10. Khởi động lại và hiển thị thông tin
 # -------------------------------------------------
 $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" restart || {
-    echo -e "${RED}❌ Khởi động lại Supabase thất bại.${NC}"
+    echo -e "${BOLD_RED}❌ Khởi động lại Supabase thất bại.${NC}"
     echo "   Hãy kiểm tra file docker-compose.yml tại $TARGET_DIR và thử lại."
     exit 1
 }
 IP=$(hostname -I | awk '{print $1}')
 log_info "Khôi phục hoàn tất tại $TARGET_DIR"
-echo -e "${GREEN}=============================================${NC}"
-echo -e "${GREEN}  🎉 KHÔI PHỤC HOÀN TẤT!${NC}"
-echo -e "${GREEN}=============================================${NC}"
-if [ -f .env ]; then
-    STUDIO_URL="http://${IP}:8000"
-    [ -n "$DOMAIN" ] && STUDIO_URL="https://${DOMAIN}"
-    echo "🌐 Studio URL: $STUDIO_URL"
-    USERNAME=$(grep -E '^DASHBOARD_USERNAME=' .env | cut -d '=' -f2)
-    echo "👤 Tên đăng nhập: ${USERNAME:-Chưa có}"
-    echo "🔑 Mật khẩu: (xem trong file $TARGET_DIR/.env, biến DASHBOARD_PASSWORD)"
-fi
-echo -e "${GREEN}=============================================${NC}"
-
+echo -e "${BOLD_GREEN}=============================================${NC}"
+echo -e "${BOLD_GREEN}  🎉 KHÔI PHỤC HOÀN TẤT!${NC}"
+echo -e "${BOLD_GREEN}=============================================${NC}"
+echo -e "${BOLD_GREEN}✅ Hệ thống Supabase của bạn đã sẵn sàng.${NC}"
+echo -e "${BOLD_GREEN}📋 Ghi nhớ thông tin đăng nhập admin:${NC}"
+echo "   Email: $(grep '^ADMIN_EMAIL=' "$TARGET_DIR/.env" | cut -d'=' -f2)"
+echo "   Mật khẩu: $(grep '^ADMIN_PASSWORD=' "$TARGET_DIR/.env" | cut -d'=' -f2)"
+echo ""
 # Dọn dẹp thư mục tạm nếu dùng file backup ngoài
 # Chỉ xóa khi TMP_DIR được tạo ra (USE_EMBEDDED != "y") và an toàn (nằm trong /tmp)
 if [ "$USE_EMBEDDED" != "y" ] && [ -n "$TMP_DIR" ] && [[ "$TMP_DIR" == /tmp/* ]]; then

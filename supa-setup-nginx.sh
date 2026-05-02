@@ -10,9 +10,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-echo "======================================"
-echo "  🌐 CÀI ĐẶT NGINX + HTTPS"
-echo "======================================"
+echo -e "${BOLD_BLUE}======================================${NC}"
+echo -e "${BOLD_BLUE}  🌐 CÀI ĐẶT NGINX + HTTPS${NC}"
+echo -e "${BOLD_BLUE}======================================${NC}"
 
 # Nhập và validate domain
 read -p "Nhập domain của bạn: " DOMAIN
@@ -28,7 +28,7 @@ PORT80=$(check_port 80)
 PORT443=$(check_port 443)
 
 if [[ "$PORT80" == DOCKER* ]] || [[ "$PORT443" == DOCKER* ]]; then
-    echo -e "${YELLOW}⚠️ Phát hiện container Docker đang chiếm cổng 80/443.${NC}"
+    echo -e "${BOLD_YELLOW}⚠️ Phát hiện container Docker đang chiếm cổng 80/443.${NC}"
     docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
     read -p "Dừng container đó để cài Nginx mới? (y/n): " stop_ans
     if [ "$stop_ans" = "y" ]; then
@@ -105,9 +105,9 @@ EOF
 sudo ln -sf /etc/nginx/sites-available/supabase /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
-sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m "admin@$DOMAIN" || echo "Certbot gặp lỗi, hãy kiểm tra lại domain."
+sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m "admin@$DOMAIN" || echo -e "${BOLD_RED}Certbot gặp lỗi, hãy kiểm tra lại domain.${NC}"
 
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN} ✅ CÀI ĐẶT HOÀN TẤT!${NC}"
-echo -e "${GREEN} 🌐 Truy cập: https://$DOMAIN${NC}"
-echo -e "${GREEN}========================================${NC}"
+echo -e "${BOLD_GREEN}========================================${NC}"
+echo -e "${BOLD_GREEN} ✅ CÀI ĐẶT HOÀN TẤT!${NC}"
+echo -e "${BOLD_GREEN} 🌐 Truy cập: https://$DOMAIN${NC}"
+echo -e "${BOLD_GREEN}========================================${NC}"

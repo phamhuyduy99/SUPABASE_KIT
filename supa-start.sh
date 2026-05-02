@@ -13,7 +13,7 @@ cd "$SCRIPT_DIR"
 # Nạp thư viện chung (chứa tất cả hàm dùng chung)
 source common.sh
 
-echo "🔧 Sửa lỗi định dạng file (CRLF -> LF)..."
+echo -e "${BOLD_CYAN}🔧 Sửa lỗi định dạng file (CRLF -> LF)...${NC}"
 sed -i 's/\r$//' *.sh 2>/dev/null
 
 # Lấy tên người dùng thực (ưu tiên SUDO_USER khi chạy sudo)
@@ -24,10 +24,10 @@ else
 fi
 
 log_info "Khởi động Supabase Kit bởi $CURRENT_USER"
-echo "🚀 Khởi động Supabase Kit..."
+echo -e "${BOLD_BLUE}🚀 Khởi động Supabase Kit..."
 
 # ===== KIỂM TRA MÔI TRƯỜNG CƠ BẢN =====
-echo "🔍 Đang kiểm tra môi trường..."
+echo -e "${BOLD_CYAN}🔍 Đang kiểm tra môi trường...${NC}"
 # Kiểm tra phiên bản OS
 if ! check_os_version; then
     exit 1
@@ -42,11 +42,11 @@ if sudo -n true 2>/dev/null; then
     echo "✅ Bạn có quyền sudo. Đang vào menu..."
     sudo bash supa-menu.sh
 else
-    echo "================================================="
-    echo "⚠️  BẠN KHÔNG CÓ QUYỀN SUDO"
-    echo "================================================="
-    # Quét và hiển thị trạng thái các chức năng
-    scan_features_status
+    echo -e "${BOLD_YELLOW}⚠️ Bạn đang chạy script mà không có quyền sudo.${NC}"
+    echo "   Một số chức năng quan trọng sẽ không hoạt động:"
+    echo "   - Cài đặt Docker, Nginx, Certbot"
+    echo "   - Đồng bộ backup sang VPS khác"
+    echo "   - Thiết lập cron job tự động"
     echo ""
     echo "Bạn có hai lựa chọn:"
     echo "1. Tiếp tục vào menu (các chức năng không cần sudo vẫn dùng được)."
@@ -60,7 +60,7 @@ else
     if [ "$continue_choice" = "y" ]; then
         bash supa-menu.sh
     else
-        echo "Tạm biệt."
+        echo -e "${BOLD_GREEN}Tạm biệt.${NC}"
         exit 0
     fi
 fi

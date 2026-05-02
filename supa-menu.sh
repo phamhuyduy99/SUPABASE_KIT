@@ -64,17 +64,17 @@ fi
 # Vòng lặp menu chính
 while true; do
     clear
-    echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║   SUPABASE QUẢN TRỊ TỰ ĐỘNG v3.0         ║${NC}"
-    echo -e "${GREEN}╠══════════════════════════════════════════╣${NC}"
-    echo -e "║ 1. 🧊 Đóng băng hệ thống (Backup)        ║"
-    echo -e "║ 2. ♻️ Khôi phục hệ thống (Restore)        ║"
-    echo -e "║ 3. 🌐 Cài HTTPS & domain                 ║"
-    echo -e "║ 4. 📊 Kiểm tra trạng thái                ║"
-    echo -e "║ 5. ⏰ Thiết lập tự động backup           ║"
-    echo -e "║ 6. 🔧 Cấu hình Google Drive              ║"
-    echo -e "║ 0. 🚪 Thoát                              ║"
-    echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+    echo -e "${BOLD_MAGENTA}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD_MAGENTA}║   SUPABASE QUẢN TRỊ TỰ ĐỘNG v3.0         ║${NC}"
+    echo -e "${BOLD_MAGENTA}╠══════════════════════════════════════════╣${NC}"
+    echo -e "║ ${WHITE}1. 🧊 Đóng băng hệ thống (Backup)        ${NC}║"
+    echo -e "║ ${WHITE}2. ♻️  Khôi phục hệ thống (Restore)      ${NC}║"
+    echo -e "║ ${WHITE}3. 🌐 Cài HTTPS & domain                 ${NC}║"
+    echo -e "║ ${WHITE}4. 📊 Kiểm tra trạng thái                ${NC}║"
+    echo -e "║ ${WHITE}5. ⏰ Thiết lập tự động backup            ${NC}║"
+    echo -e "║ ${WHITE}6. 🔧 Cấu hình Google Drive              ${NC}║"
+    echo -e "║ ${WHITE}0. 🚪 Thoát                              ${NC}║"
+    echo -e "${BOLD_MAGENTA}╚══════════════════════════════════════════╝${NC}"
     echo -ne "👉 Nhập lựa chọn: "
     read choice
     case $choice in

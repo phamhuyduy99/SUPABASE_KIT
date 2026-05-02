@@ -36,16 +36,16 @@ if [ -n "$1" ] && [ "$1" != "--cron" ]; then
 else
     PROJECT_DIR=$(auto_find_supabase_dir "$SCRIPT_DIR")
     if [ -z "$PROJECT_DIR" ]; then
-        echo -e "${YELLOW}Không tìm thấy thư mục dự án tự động.${NC}"
+        echo -e "${BOLD_YELLOW}Không tìm thấy thư mục dự án tự động.${NC}"
         PROJECT_DIR=$(input_supabase_dir)
     fi
 fi
 
 log_info "Bắt đầu backup Supabase tại $PROJECT_DIR"
-echo -e "${BOLD}${CYAN}======================================${NC}"
-echo -e "${BOLD}${CYAN}  🧊 ĐÓNG BĂNG HỆ THỐNG SUPABASE${NC}"
-echo -e "${BOLD}${CYAN}======================================${NC}"
-echo -e "Thư mục dự án: ${MAGENTA}$PROJECT_DIR${NC}"
+echo -e "${BOLD_BLUE}======================================${NC}"
+echo -e "${BOLD_BLUE}  🧊 ĐÓNG BĂNG HỆ THỐNG SUPABASE${NC}"
+echo -e "${BOLD_BLUE}======================================${NC}"
+echo -e "Thư mục dự án: ${BOLD_CYAN}$PROJECT_DIR${NC}"
 
 # ------------------------------------------------------------
 # 0. Kiểm tra dung lượng đĩa trước khi backup (cần ~500MB)
@@ -59,7 +59,7 @@ fi
 # ------------------------------------------------------------
 DB_CONT=$(docker ps --format '{{.Names}}' | grep -E 'supabase.*db|db' | head -1)
 if [ -z "$DB_CONT" ]; then
-    echo -e "${RED}❌ Không tìm thấy container database đang chạy.${NC}"
+    echo -e "${BOLD_RED}❌ Không tìm thấy container database đang chạy.${NC}"
     echo "Vui lòng khởi động Supabase trước khi backup."
     exit 1
 fi
@@ -73,11 +73,12 @@ read -p "Nhập user@IP của VPS dự phòng (Enter nếu không đồng bộ):
 if [ -n "$REMOTE" ] && ! command -v rsync &> /dev/null; then
     echo "📦 Cần cài đặt rsync để đồng bộ."
     if ! sudo -n true 2>/dev/null; then
-        echo -e "${YELLOW}Bạn không có quyền sudo, không thể tự động cài rsync.${NC}"
+        echo -e "${BOLD_YELLOW}Bạn không có quyền sudo, không thể tự động cài rsync.${NC}"
         echo "   Bạn có thể nhờ quản trị viên cài giúp: sudo apt install -y rsync"
         echo "   Hoặc bỏ qua đồng bộ từ xa lần này."
         read -p "Nhấn Enter để tiếp tục (sẽ bỏ qua đồng bộ)..." dummy
         REMOTE=""
+
     else
         wait_for_apt_lock || exit 1
         sudo apt install -y rsync
@@ -93,7 +94,7 @@ if command -v rclone &> /dev/null && rclone listremotes | grep -q "^gdrive:"; th
     read -p "📤 Upload backup lên Google Drive? (y/n): " UPLOAD_DRIVE
 else
     if [[ "$1" != "--cron" ]]; then
-        echo -e "${YELLOW}📤 Bạn có muốn upload backup lên Google Drive không?${NC}"
+        echo -e "${BOLD_YELLOW}📤 Bạn có muốn upload backup lên Google Drive không?${NC}"
         echo "   (Yêu cầu cấu hình rclone một lần duy nhất)"
         read -p "   Lựa chọn (y/n): " UPLOAD_DRIVE
         if [ "$UPLOAD_DRIVE" = "y" ]; then
@@ -101,14 +102,14 @@ else
                 ensure_rclone_gdrive || UPLOAD_DRIVE="n"
             fi
             if [ "$UPLOAD_DRIVE" = "y" ] && ! rclone listremotes | grep -q "^gdrive:"; then
-                echo -e "${YELLOW}⚠️ Remote 'gdrive' chưa được cấu hình.${NC}"
+                echo -e "${BOLD_YELLOW}⚠️ Remote 'gdrive' chưa được cấu hình.${NC}"
                 read -p "Bạn có muốn chạy trình cấu hình Google Drive ngay bây giờ không? (y/n): " setup_gdrive
                 if [ "$setup_gdrive" = "y" ]; then
                     bash "$SCRIPT_DIR/supa-setup-gdrive.sh"
                     if rclone listremotes | grep -q "^gdrive:"; then
-                        echo -e "${GREEN}✅ Đã cấu hình Google Drive thành công.${NC}"
+                        echo -e "${BOLD_GREEN}✅ Đã cấu hình Google Drive thành công.${NC}"
                     else
-                        echo -e "${RED}❌ Cấu hình không thành công, sẽ bỏ qua upload.${NC}"
+                        echo -e "${BOLD_RED}❌ Cấu hình không thành công, sẽ bỏ qua upload.${NC}"
                         UPLOAD_DRIVE="n"
                     fi
                 else
@@ -128,12 +129,12 @@ BACKUP_FILE="$PROJECT_DIR/${PACK_NAME}.tar.gz"
 TMP_ROOT=$(mktemp -d)
 
 # Thêm trap cleanup để dọn dẹp thư mục tạm khi thoát hoặc bị ngắt
-trap 'echo -e "${YELLOW}🧹 Dọn dẹp thư mục tạm...${NC}"; rm -rf "$TMP_ROOT"' EXIT INT TERM
+trap 'echo -e "${BOLD_YELLOW}🧹 Dọn dẹp thư mục tạm...${NC}"; rm -rf "$TMP_ROOT"' EXIT INT TERM
 
 PACK_DIR="$TMP_ROOT/$PACK_NAME"
 mkdir -p "$PACK_DIR/backup_data"/{config,database,storage,volumes}
 
-echo -e "📁 Chuẩn bị gói backup tự hành: ${MAGENTA}$PACK_NAME${NC}"
+echo -e "📁 Chuẩn bị gói backup tự hành: ${BOLD_MAGENTA}$PACK_NAME${NC}"
 
 # ------------------------------------------------------------
 # 5. Copy toàn bộ script của kit vào gốc gói backup
@@ -147,7 +148,7 @@ cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/" 2>/dev/null
 # ------------------------------------------------------------
 echo -e "${BOLD}1/4 Sao lưu cấu hình...${NC}"
 if ! cp "$PROJECT_DIR/.env" "$PACK_DIR/backup_data/config/"; then
-    echo -e "${RED}❌ Không thể copy .env.${NC}"
+    echo -e "${BOLD_RED}❌ Không thể copy .env.${NC}"
     exit 1
 fi
 cp "$PROJECT_DIR/docker-compose.yml" "$PACK_DIR/backup_data/config/"
@@ -163,82 +164,86 @@ if [ -d "$PROJECT_DIR/volumes" ]; then
         cp -r "$PROJECT_DIR/volumes/db/init" "$PACK_DIR/backup_data/volumes/db/" 2>>"$VOL_ERR_LOG"
     fi
     if [ -s "$VOL_ERR_LOG" ]; then
-        echo -e "${YELLOW}⚠️ Một số file không thể sao lưu (chi tiết trong $VOL_ERR_LOG):${NC}"
+        echo -e "${BOLD_YELLOW}⚠️ Một số file không thể sao lưu (chi tiết trong $VOL_ERR_LOG):${NC}"
         cat "$VOL_ERR_LOG"
     else
-        echo -e "${GREEN}   ✅ Volumes đã được sao lưu đầy đủ.${NC}"
+        echo -e "${BOLD_GREEN}   ✅ Volumes đã được sao lưu đầy đủ.${NC}"
     fi
     rm -f "$VOL_ERR_LOG"
 else
-    echo -e "${YELLOW}⚠️ Không tìm thấy thư mục volumes. Bỏ qua.${NC}"
+    echo -e "${BOLD_YELLOW}⚠️ Không tìm thấy thư mục volumes. Bỏ qua.${NC}"
 fi
 
 # ------------------------------------------------------------
-# 7. Sao lưu database (thêm pipefail để bắt lỗi trong pipeline)
+# 7. Backup database
 # ------------------------------------------------------------
-echo -e "${BOLD}2/4 Sao lưu database...${NC}"
-set -o pipefail
-if docker exec -t $DB_CONT pg_dumpall -U postgres -c | gzip > "$PACK_DIR/backup_data/database/full_backup.sql.gz"; then
-    echo -e "   -> Database đã được dump thành công."
-else
-    echo -e "${RED}❌ Có lỗi khi dump database (kiểm tra kết nối hoặc dung lượng).${NC}"
-    log_info "Lỗi khi dump database"
-    # Trap sẽ xử lý việc xóa TMP_ROOT, nhưng exit ngay để tránh các bước sau
+echo "📦 Đang backup database..."
+BACKUP_DB_FILE="$BACKUP_DATA_DIR/database/full_backup.sql.gz"
+mkdir -p "$(dirname "$BACKUP_DB_FILE")"
+if ! docker exec "$DB_CONT" pg_dumpall -U postgres | gzip > "$BACKUP_DB_FILE"; then
+    echo -e "${BOLD_RED}❌ Có lỗi khi dump database...${NC}"
+    echo "   Vui lòng kiểm tra trạng thái container và thử lại."
+    rm -rf "$BACKUP_DATA_DIR"
     exit 1
 fi
-set +o pipefail
+echo -e "${BOLD_GREEN}✅ Database đã được backup.${NC}"
 
 # ------------------------------------------------------------
-# 8. Sao lưu storage
+# 8. Backup storage
 # ------------------------------------------------------------
-echo -e "${BOLD}3/4 Sao lưu storage...${NC}"
+echo "📦 Đang backup storage..."
+BACKUP_STORAGE_FILE="$BACKUP_DATA_DIR/storage/storage.tar.gz"
+mkdir -p "$(dirname "$BACKUP_STORAGE_FILE")"
 STORAGE_VOL=$(docker volume ls -q | grep _storage)
 if [ -n "$STORAGE_VOL" ]; then
-    docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v "$PACK_DIR/backup_data/storage:/backup" alpine \
+    docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v "$BACKUP_DATA_DIR/storage:/backup" alpine \
     sh -c "cd /mnt/storage && tar czf /backup/storage.tar.gz ."
     echo "   -> Storage (Docker volume) đã được backup."
 else
     if [ -d "$PROJECT_DIR/volumes/storage" ]; then
-        tar czf "$PACK_DIR/backup_data/storage/storage.tar.gz" -C "$PROJECT_DIR/volumes/storage" .
+        tar czf "$BACKUP_STORAGE_FILE" -C "$PROJECT_DIR/volumes/storage" .
         echo "   -> Storage (bind mount) đã được backup."
     else
-        echo -e "${YELLOW}⚠️ Không tìm thấy volume hoặc thư mục storage. Bỏ qua.${NC}"
+        echo -e "${BOLD_YELLOW}⚠️ Không tìm thấy volume hoặc thư mục storage. Bỏ qua.${NC}"
     fi
 fi
 
 # ------------------------------------------------------------
-# 9. Nén toàn bộ thư mục PACK_NAME thành file .tar.gz
+# 9. Tạo file .tar.gz hoàn chỉnh
 # ------------------------------------------------------------
-echo -e "${BOLD}4/4 Đóng gói...${NC}"
-cd "$TMP_ROOT"
-tar czf "$BACKUP_FILE" "$PACK_NAME"
-rm -rf "$TMP_ROOT"
-echo -e "${GREEN}✅ Backup thành công: $BACKUP_FILE${NC}"
-log_info "Backup thành công: $BACKUP_FILE"
+echo "📦 Đang tạo file backup hoàn chỉnh..."
+cd "$SCRIPT_DIR"
+if tar czf "$BACKUP_FILE" --exclude='backup_data.tar.gz' --exclude='.git' *; then
+    echo -e "${BOLD_GREEN}✅ Backup thành công: ${BACKUP_FILE}${NC}"
+    log_info "Backup hoàn tất: $BACKUP_FILE"
+else
+    echo -e "${BOLD_RED}❌ Tạo file backup thất bại.${NC}"
+    exit 1
+fi
 
 # ------------------------------------------------------------
 # 10. Đồng bộ sang VPS dự phòng (tạo package & gửi cả thư mục)
 # ------------------------------------------------------------
 if [ -n "$REMOTE" ]; then
-    echo -e "${CYAN}☁️ Đồng bộ sang $REMOTE...${NC}"
+    echo -e "${BOLD_CYAN}☁️ Đồng bộ sang $REMOTE...${NC}"
 
     SSH_OK=0
     REMOTE_HOME=""
 
     # ---------- Tạo SSH key nếu chưa có ----------
     if [ ! -f ~/.ssh/id_rsa ]; then
-        echo -e "${YELLOW}🔑 Chưa có SSH key. Đang tạo cặp key mới...${NC}"
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        if ! ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q; then
-            echo -e "${RED}❌ Tạo SSH key thất bại.${NC}"
-            exit 1
-        fi
-        echo -e "${GREEN}✅ Đã tạo SSH key tại ~/.ssh/id_rsa${NC}"
+        echo -e "${BOLD_YELLOW}🔑 Chưa có SSH key. Đang tạo mới...${NC}"
+        ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -N ""
+        echo -e "${BOLD_GREEN}✅ Đã tạo SSH key mới.${NC}"
+        echo -e "${PURPLE}📋 Hướng dẫn thủ công:${NC}"
+        echo "   1. Copy nội dung public key sau đây:"
+        echo "      $(cat "$HOME/.ssh/id_rsa.pub")"
+        echo "   2. Dán vào file ~/.ssh/authorized_keys trên VPS đích."
+        echo "   3. Đảm bảo quyền truy cập đúng: chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
     fi
 
     # ---------- Yêu cầu copy public key sang VPS đích ----------
-    echo -e "${CYAN}👉 Để đồng bộ không cần mật khẩu, bạn cần copy public key sang VPS đích.${NC}"
+    echo -e "${BOLD_CYAN}👉 Để đồng bộ không cần mật khẩu, bạn cần copy public key sang VPS đích.${NC}"
     echo "   Có 2 cách:"
     echo "   1. (Tự động) Để script này tự copy giúp bạn (sẽ hỏi mật khẩu VPS đích MỘT LẦN)."
     echo "   2. (Thủ công) Bạn tự copy bằng lệnh hoặc thêm vào file authorized_keys."
@@ -246,7 +251,7 @@ if [ -n "$REMOTE" ]; then
     read -p "   Bạn muốn script tự copy giúp không? (y/n): " auto_copy_ssh
 
     if [ "$auto_copy_ssh" = "y" ]; then
-        echo -e "${CYAN}   Đang copy public key sang $REMOTE...${NC}"
+        echo -e "${BOLD_CYAN}   Đang copy public key sang $REMOTE...${NC}"
         
         solve_ssh_sync_problem() {
             local strategy=1
@@ -317,7 +322,7 @@ if [ -n "$REMOTE" ]; then
                             success=1
                             break
                         else
-                            echo -e "${RED}   ❌ Kết nối SSH vẫn thất bại.${NC}"
+                            echo -e "${BOLD_RED}   ❌ Kết nối SSH vẫn thất bại.${NC}"
                         fi
                     fi
                 elif [ "$strategy" -eq 4 ]; then
@@ -422,10 +427,10 @@ if [ -n "$REMOTE" ]; then
             done
             
             if [ $success -eq 1 ]; then
-                echo -e "${GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
+                echo -e "${BOLD_GREEN}   ✅ Copy thành công! Từ lần sau sẽ không cần mật khẩu nữa.${NC}"
                 return 0
             else
-                echo -e "${RED}   ❌ Đã thử tất cả 10 chiến lược nhưng vẫn không thể thiết lập SSH.${NC}"
+                echo -e "${BOLD_RED}   ❌ Đã thử tất cả 10 chiến lược nhưng vẫn không thể thiết lập SSH.${NC}"
                 return 1
             fi
         }
@@ -447,7 +452,7 @@ if [ -n "$REMOTE" ]; then
     fi
 
     # ---------- Chẩn đoán lỗi SSH chi tiết ----------
-    echo -e "${CYAN}   Đang kiểm tra kết nối SSH tới $REMOTE...${NC}"
+    echo -e "${BOLD_CYAN}   Đang kiểm tra kết nối SSH tới $REMOTE...${NC}"
     SSH_ERROR=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -v "${REMOTE}" 'echo "OK"' 2>&1)
     SSH_EXIT_CODE=$?
 
@@ -455,16 +460,16 @@ if [ -n "$REMOTE" ]; then
         # Kết nối thành công, kiểm tra thư mục home
         REMOTE_HOME=$(ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" 'echo $HOME' 2>/dev/null)
         if [ -n "$REMOTE_HOME" ] && ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "test -d '$REMOTE_HOME'" 2>/dev/null; then
-            echo -e "${GREEN}   ✅ Kết nối SSH thành công, thư mục home xác định được: $REMOTE_HOME${NC}"
+            echo -e "${BOLD_GREEN}   ✅ Kết nối SSH thành công, thư mục home xác định được: $REMOTE_HOME${NC}"
             SSH_OK=1
         else
-            echo -e "${RED}   ❌ Kết nối SSH được nhưng thư mục home không tồn tại hoặc không thể truy cập.${NC}"
+            echo -e "${BOLD_RED}   ❌ Kết nối SSH được nhưng thư mục home không tồn tại hoặc không thể truy cập.${NC}"
             echo "   Hãy SSH vào VPS đích và kiểm tra: ssh $REMOTE"
             SSH_OK=0
         fi
     else
         # Kết nối thất bại, phân tích lỗi
-        echo -e "${RED}   ❌ Không thể kết nối SSH tới $REMOTE.${NC}"
+        echo -e "${BOLD_RED}   ❌ Không thể kết nối SSH tới $REMOTE.${NC}"
         echo ""
         # Phân tích thông báo lỗi phổ biến
         if echo "$SSH_ERROR" | grep -q "Connection refused"; then
@@ -525,7 +530,7 @@ if [ -n "$REMOTE" ]; then
 
     # ---------- Tạo package và gửi nếu kết nối OK ----------
     if [ $SSH_OK -eq 1 ]; then
-        echo -e "${CYAN}   Đang đóng gói và đồng bộ...${NC}"
+        echo -e "${BOLD_CYAN}   Đang đóng gói và đồng bộ...${NC}"
 
         # Tạo thư mục package trên VPS nguồn
         PACKAGE_DIR="$PROJECT_DIR/$(basename "$BACKUP_FILE" .tar.gz)-package"
@@ -555,10 +560,10 @@ EXTRACTEOF
         ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_PARENT'" 2>/dev/null
 
         if scp -o StrictHostKeyChecking=accept-new -r "$PACKAGE_DIR" "${REMOTE}:${DEST_PARENT}/"; then
-            echo -e "${GREEN}✅ Đồng bộ thành công! Thư mục trên VPS đích: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")${NC}"
+            echo -e "${BOLD_GREEN}✅ Đồng bộ thành công! Thư mục trên VPS đích: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")${NC}"
             echo -e "   📜 Script giải nén: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")/supa-extract-backup.sh"
         else
-            echo -e "${RED}❌ Đồng bộ thất bại.${NC}"
+            echo -e "${BOLD_RED}❌ Đồng bộ thất bại.${NC}"
             log_info "Đồng bộ sang VPS dự phòng thất bại"
             echo "   Bạn có thể thử tự copy thư mục bằng lệnh scp:"
             echo "   scp -r $PACKAGE_DIR ${REMOTE}:${DEST_PARENT}/"
@@ -591,7 +596,7 @@ if [[ "$1" != "--cron" ]]; then
         fi
         CRON_LINE="0 2 * * * $SCRIPT_PATH --cron $PROJECT_DIR >> /var/log/supabase-backup.log 2>&1"
         (crontab -l 2>/dev/null; echo "$CRON_LINE") | sort -u | crontab -
-        echo -e "${GREEN}✅ Cron job đã được thêm. Hệ thống sẽ tự động backup lúc 2h sáng mỗi ngày.${NC}"
+        echo -e "${BOLD_GREEN}✅ Cron job đã được thêm. Hệ thống sẽ tự động backup lúc 2h sáng mỗi ngày.${NC}"
         log_info "Đã thêm cron job backup hàng ngày"
     fi
 fi
