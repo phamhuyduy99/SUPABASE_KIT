@@ -42,7 +42,7 @@ if sudo -n true 2>/dev/null; then
     echo "✅ Bạn có quyền sudo. Đang vào menu..."
     sudo bash supa-menu.sh
 else
-    echo -e "${BOLD_YELLOW}⚠️ Bạn đang chạy script mà không có quyền sudo.${NC}"
+    echo -e "${BOLD_YELLOW}⚠️  BẠN KHÔNG CÓ QUYỀN SUDO${NC}"
     echo "   Một số chức năng quan trọng sẽ không hoạt động:"
     echo "   - Cài đặt Docker, Nginx, Certbot"
     echo "   - Đồng bộ backup sang VPS khác"
@@ -56,7 +56,7 @@ else
     echo "   sudo usermod -aG sudo $CURRENT_USER"
     echo "   Sau đó đăng xuất và đăng nhập lại."
     echo ""
-    read -p "👉 Bạn muốn tiếp tục không? (y/n): " continue_choice
+    read -p "${BOLD_WHITE}👉 Bạn muốn tiếp tục không? (y/n): ${NC}" continue_choice
     if [ "$continue_choice" = "y" ]; then
         bash supa-menu.sh
     else

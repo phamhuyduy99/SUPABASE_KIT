@@ -14,7 +14,7 @@ source "$SCRIPT_DIR/common.sh"
 echo -e "${BOLD_BLUE}======================================${NC}"
 echo -e "${BOLD_BLUE}  🔧 CẤU HÌNH GOOGLE DRIVE (RCLONE)${NC}"
 echo -e "${BOLD_BLUE}======================================${NC}"
-echo ""
+
 echo "Quá trình này cần bạn có một tài khoản Google và một máy tính có trình duyệt web."
 echo "Bạn có thể thay đổi tài khoản bất cứ lúc nào bằng cách chạy lại chức năng này."
 echo ""

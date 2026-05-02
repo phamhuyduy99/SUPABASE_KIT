@@ -41,7 +41,7 @@ if [[ "$PORT80" == DOCKER* ]] || [[ "$PORT443" == DOCKER* ]]; then
         exit 0
     fi
 elif [[ "$PORT80" != "FREE" ]] || [[ "$PORT443" != "FREE" ]]; then
-    echo -e "${RED}Cổng 80/443 đang bị chiếm bởi tiến trình hệ thống, không thể tiếp tục.${NC}"
+    echo -e "${BOLD_RED}❌ Cổng 80/443 đang bị chiếm bởi tiến trình hệ thống, không thể tiếp tục.${NC}"
     exit 1
 fi
 

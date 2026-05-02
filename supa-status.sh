@@ -12,6 +12,8 @@ if command -v docker &> /dev/null; then
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | while IFS= read -r line; do
         if [[ "$line" == *"Up"* ]]; then
             echo -e "${BOLD_GREEN}$line${NC}"
+        elif [[ "$line" == *"Exited"* ]] || [[ "$line" == *"Dead"* ]]; then
+            echo -e "${BOLD_YELLOW}$line${NC}"
         else
             echo "$line"
         fi

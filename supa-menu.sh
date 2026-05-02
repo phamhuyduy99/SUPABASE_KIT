@@ -65,7 +65,7 @@ fi
 while true; do
     clear
     echo -e "${BOLD_MAGENTA}╔══════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD_MAGENTA}║   SUPABASE QUẢN TRỊ TỰ ĐỘNG v3.0         ║${NC}"
+    echo -e "${BOLD_MAGENTA}║   ${BOLD_WHITE}SUPABASE QUẢN TRỊ TỰ ĐỘNG v3.0         ${BOLD_MAGENTA}║${NC}"
     echo -e "${BOLD_MAGENTA}╠══════════════════════════════════════════╣${NC}"
     echo -e "║ ${WHITE}1. 🧊 Đóng băng hệ thống (Backup)        ${NC}║"
     echo -e "║ ${WHITE}2. ♻️  Khôi phục hệ thống (Restore)      ${NC}║"
@@ -75,7 +75,7 @@ while true; do
     echo -e "║ ${WHITE}6. 🔧 Cấu hình Google Drive              ${NC}║"
     echo -e "║ ${WHITE}0. 🚪 Thoát                              ${NC}║"
     echo -e "${BOLD_MAGENTA}╚══════════════════════════════════════════╝${NC}"
-    echo -ne "👉 Nhập lựa chọn: "
+    echo -ne "${BOLD_WHITE}👉 Nhập lựa chọn: ${NC}"
     read choice
     case $choice in
         1) log_info "Người dùng chọn: Đóng băng hệ thống"
@@ -91,14 +91,14 @@ while true; do
         6) log_info "Người dùng chọn: Cấu hình Google Drive"
            bash supa-setup-gdrive.sh ;;
         0) log_info "Người dùng thoát menu"
-           echo "Tạm biệt!"
+           echo -e "${BOLD_GREEN}Tạm biệt!${NC}"
            exit 0
            ;;
         *) log_warn "Người dùng nhập lựa chọn không hợp lệ: $choice"
-           echo -e "${RED}Lựa chọn không hợp lệ.${NC}"
+           echo -e "${BOLD_RED}Lựa chọn không hợp lệ.${NC}"
            sleep 1
            ;;
     esac
     echo ""
-    read -p "Nhấn Enter để tiếp tục..." dummy
+    read -p "${BOLD_WHITE}Nhấn Enter để tiếp tục...${NC}" dummy
 done

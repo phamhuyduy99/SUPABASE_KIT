@@ -18,16 +18,6 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-# ---------- MÀU SẮC ----------
-# Định nghĩa màu nếu chưa có từ common.sh để đảm bảo hiển thị đúng
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
 # Xác định PROJECT_DIR: ưu tiên tham số, sau đó tự dò, cuối cùng hỏi người dùng
 if [ -n "$1" ] && [ "$1" != "--cron" ]; then
     PROJECT_DIR="$1"
@@ -78,7 +68,6 @@ if [ -n "$REMOTE" ] && ! command -v rsync &> /dev/null; then
         echo "   Hoặc bỏ qua đồng bộ từ xa lần này."
         read -p "Nhấn Enter để tiếp tục (sẽ bỏ qua đồng bộ)..." dummy
         REMOTE=""
-
     else
         wait_for_apt_lock || exit 1
         sudo apt install -y rsync
@@ -134,7 +123,7 @@ trap 'echo -e "${BOLD_YELLOW}🧹 Dọn dẹp thư mục tạm...${NC}"; rm -rf 
 PACK_DIR="$TMP_ROOT/$PACK_NAME"
 mkdir -p "$PACK_DIR/backup_data"/{config,database,storage,volumes}
 
-echo -e "📁 Chuẩn bị gói backup tự hành: ${BOLD_MAGENTA}$PACK_NAME${NC}"
+echo -e "📁 Chuẩn bị gói backup tự hành: ${BOLD_CYAN}$PACK_NAME${NC}"
 
 # ------------------------------------------------------------
 # 5. Copy toàn bộ script của kit vào gốc gói backup

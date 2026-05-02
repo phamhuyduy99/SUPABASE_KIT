@@ -27,7 +27,10 @@ BOLD_MAGENTA='\033[1;35m'
 BOLD_CYAN='\033[1;36m'
 BOLD_WHITE='\033[1;37m'
 
-# Chữ thường (bổ sung các màu còn thiếu hoặc dễ nhầm lẫn)
+# Chữ thường
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+WHITE='\033[0;37m'
 ORANGE='\033[0;33m'
 LIGHT_GREEN='\033[1;32m'
 LIGHT_CYAN='\033[1;36m'

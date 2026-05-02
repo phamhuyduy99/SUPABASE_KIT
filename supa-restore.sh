@@ -27,7 +27,7 @@ fi
 USE_EMBEDDED="n"
 if [ -d "$SCRIPT_DIR/backup_data" ]; then
     echo -e "${BOLD_YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
-    read -p "👉 Bạn có muốn dùng dữ liệu này để khôi phục luôn không? (y/n): " USE_EMBEDDED
+    read -p "${BOLD_WHITE}👉 Bạn có muốn dùng dữ liệu này để khôi phục luôn không? (y/n): ${NC}" USE_EMBEDDED
 fi
 
 if [ "$USE_EMBEDDED" = "y" ]; then
@@ -984,6 +984,10 @@ solve_database_import_problem() {
 # Thực thi giải quyết vấn đề import database
 if ! solve_database_import_problem; then
     rm -f /tmp/restore.sql
+    echo -e "${BG_RED}${BOLD_WHITE} LỖI NGHIÊM TRỌNG ${NC}"
+    echo "   Script đã thử nhiều cách nhưng vẫn không thể import database."
+    echo "   Vui lòng kiểm tra log chi tiết và thử khôi phục thủ công."
+    log_fatal "Tất cả chiến lược import database đều thất bại"
     exit 1
 fi
 
@@ -1089,7 +1093,8 @@ echo -e "${BOLD_GREEN}✅ Hệ thống Supabase của bạn đã sẵn sàng.${N
 echo -e "${BOLD_GREEN}📋 Ghi nhớ thông tin đăng nhập admin:${NC}"
 echo "   Email: $(grep '^ADMIN_EMAIL=' "$TARGET_DIR/.env" | cut -d'=' -f2)"
 echo "   Mật khẩu: $(grep '^ADMIN_PASSWORD=' "$TARGET_DIR/.env" | cut -d'=' -f2)"
-echo ""
+echo "   Truy cập: http://$IP:8000"
+
 # Dọn dẹp thư mục tạm nếu dùng file backup ngoài
 # Chỉ xóa khi TMP_DIR được tạo ra (USE_EMBEDDED != "y") và an toàn (nằm trong /tmp)
 if [ "$USE_EMBEDDED" != "y" ] && [ -n "$TMP_DIR" ] && [[ "$TMP_DIR" == /tmp/* ]]; then
