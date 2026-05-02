@@ -7,47 +7,89 @@
 # xử lý lỗi apt lock, dung lượng đĩa, mạng, OS...
 # ==============================================
 
-# ---------- MÀU SẮC CƠ BẢN ----------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[0;37m'
-NC='\033[0m' # No Color
+# ---------- MÀU SẮC (DÙNG tput, HỖ TRỢ HẦU HẾT TERMINAL) ----------
+if [ -t 1 ] && command -v tput &>/dev/null && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
+    # Terminal hỗ trợ màu
+    RED=$(tput setaf 1)
+    GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3)
+    BLUE=$(tput setaf 4)
+    MAGENTA=$(tput setaf 5)
+    CYAN=$(tput setaf 6)
+    WHITE=$(tput setaf 7)
+    BOLD=$(tput bold)
+    RESET=$(tput sgr0)
+    BG_RED=$(tput setab 1)
+    BG_GREEN=$(tput setab 2)
+    BG_YELLOW=$(tput setab 3)
+    BG_BLUE=$(tput setab 4)
+    BG_MAGENTA=$(tput setab 5)
+    BG_CYAN=$(tput setab 6)
+    BG_WHITE=$(tput setab 7)
+    # Định dạng đặc biệt
+    UNDERLINE=$(tput smul)
+    BLINK=$(tput blink)
+    REVERSE=$(tput rev)
+else
+    # Không màu – dùng ký hiệu thay thế cho trực quan
+    RED="❌ "
+    GREEN="✅ "
+    YELLOW="⚠️ "
+    BLUE=""
+    MAGENTA=""
+    CYAN=""
+    WHITE=""
+    BOLD=""
+    RESET=""
+    BG_RED=""
+    BG_GREEN=""
+    BG_YELLOW=""
+    BG_BLUE=""
+    BG_MAGENTA=""
+    BG_CYAN=""
+    BG_WHITE=""
+    UNDERLINE=""
+    BLINK=""
+    REVERSE=""
+fi
 
-# ---------- MÀU SẮC MỞ RỘNG ----------
-# Chữ đậm
-BOLD_RED='\033[1;31m'
-BOLD_GREEN='\033[1;32m'
-BOLD_YELLOW='\033[1;33m'
-BOLD_BLUE='\033[1;34m'
-BOLD_MAGENTA='\033[1;35m'
-BOLD_CYAN='\033[1;36m'
-BOLD_WHITE='\033[1;37m'
+# Biến phụ trợ để in nổi bật
+BOLD_RED="${BOLD}${RED}"
+BOLD_GREEN="${BOLD}${GREEN}"
+BOLD_YELLOW="${BOLD}${YELLOW}"
+BOLD_BLUE="${BOLD}${BLUE}"
+BOLD_MAGENTA="${BOLD}${MAGENTA}"
+BOLD_CYAN="${BOLD}${CYAN}"
+BOLD_WHITE="${BOLD}${WHITE}"
 
-# Chữ thường
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-WHITE='\033[0;37m'
-ORANGE='\033[0;33m'
-LIGHT_GREEN='\033[1;32m'
-LIGHT_CYAN='\033[1;36m'
+# ---------- HÀM TIỆN ÍCH IN THÔNG BÁO ----------
+# In thông báo thành công
+print_success() { echo -e "${BOLD_GREEN}✓ $*${RESET}"; }
+# In thông báo lỗi
+print_error()   { echo -e "${BOLD_RED}✗ $*${RESET}"; }
+# In thông báo cảnh báo
+print_warning() { echo -e "${BOLD_YELLOW}⚠ $*${RESET}"; }
+# In thông báo đang làm việc
+print_info()    { echo -e "${BOLD_BLUE}ℹ $*${RESET}"; }
+# In tiêu đề chính
+print_title()   { echo -e "${BOLD_MAGENTA}=== $* ===${RESET}"; }
+# In bước hướng dẫn
+print_step()    { echo -e "${BOLD_WHITE}[$1/$2] $3${RESET}"; }
 
-# Nền (background)
-BG_RED='\033[41m'
-BG_GREEN='\033[42m'
-BG_YELLOW='\033[43m'
-BG_BLUE='\033[44m'
-BG_MAGENTA='\033[45m'
-BG_CYAN='\033[46m'
-BG_WHITE='\033[47m'
-
-# Định dạng khác
-UNDERLINE='\033[4m'
-BLINK='\033[5m'
-REVERSE='\033[7m'
+# Hiển thị tiến trình đang chạy (spinner)
+show_progress() {
+    local pid=$1
+    local msg="$2"
+    local spin='-\|/'
+    echo -ne "${BOLD_YELLOW}${msg}... ${RESET}"
+    while kill -0 $pid 2>/dev/null; do
+        for i in $(seq 0 3); do
+            echo -ne "\b${spin:$i:1}"
+            sleep 0.2
+        done
+    done
+    echo -e "\b${BOLD_GREEN}✓ Hoàn tất${RESET}"
+}
 
 # ---------- HÀM KIỂM TRA NGƯỜI DÙNG THỰC SỰ ----------
 # Lấy tên người dùng thực, ngay cả khi đang chạy với sudo

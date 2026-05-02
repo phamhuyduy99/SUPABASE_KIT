@@ -73,13 +73,14 @@ while true; do
     echo -e "║ ${WHITE}4. 📊 Kiểm tra trạng thái                ${NC}║"
     echo -e "║ ${WHITE}5. ⏰ Thiết lập tự động backup            ${NC}║"
     echo -e "║ ${WHITE}6. 🔧 Cấu hình Google Drive              ${NC}║"
+    echo -e "║ ${WHITE}7. 🔍 Kiểm tra tương thích VPS           ${NC}║"
     echo -e "║ ${WHITE}0. 🚪 Thoát                              ${NC}║"
     echo -e "${BOLD_MAGENTA}╚══════════════════════════════════════════╝${NC}"
     echo -ne "${BOLD_WHITE}👉 Nhập lựa chọn: ${NC}"
     read choice
     case $choice in
         1) log_info "Người dùng chọn: Đóng băng hệ thống"
-           bash supa-freeze.sh "$PROJECT_DIR" ;;
+           bash supa-freeze.sh ;;
         2) log_info "Người dùng chọn: Khôi phục hệ thống"
            bash supa-restore.sh ;;
         3) log_info "Người dùng chọn: Cài HTTPS & domain"
@@ -87,18 +88,18 @@ while true; do
         4) log_info "Người dùng chọn: Kiểm tra trạng thái"
            bash supa-status.sh ;;
         5) log_info "Người dùng chọn: Thiết lập tự động backup"
-           setup_auto_backup ;;
+           echo -e "${BOLD_YELLOW}⏰ Tính năng đang phát triển...${NC}" ;;
         6) log_info "Người dùng chọn: Cấu hình Google Drive"
            bash supa-setup-gdrive.sh ;;
-        0) log_info "Người dùng thoát menu"
-           echo -e "${BOLD_GREEN}Tạm biệt!${NC}"
-           exit 0
-           ;;
-        *) log_warn "Người dùng nhập lựa chọn không hợp lệ: $choice"
-           echo -e "${BOLD_RED}Lựa chọn không hợp lệ.${NC}"
-           sleep 1
-           ;;
+        7) log_info "Người dùng chọn: Kiểm tra tương thích VPS"
+           bash supa-check-env.sh ;;
+        0) echo -e "${BOLD_GREEN}👋 Tạm biệt!${NC}"
+           exit 0 ;;
+        *) echo -e "${BOLD_RED}❌ Lựa chọn không hợp lệ. Vui lòng thử lại.${NC}"
+           sleep 2
+           show_menu ;;
     esac
+
     echo ""
     read -p "${BOLD_WHITE}Nhấn Enter để tiếp tục...${NC}" dummy
 done

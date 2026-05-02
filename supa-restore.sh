@@ -9,15 +9,25 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
+# ---------- KIỂM TRA MÔI TRƯỜNG TRƯỚC KHI KHÔI PHỤC ----------
+print_title "KIỂM TRA MÔI TRƯỜNG VPS"
+print_info "Đang xác minh máy chủ có đủ điều kiện chạy Supabase không..."
+if ! bash "$SCRIPT_DIR/supa-check-env.sh" >/dev/null 2>&1; then
+    print_error "Máy chủ của bạn không đáp ứng yêu cầu để chạy Supabase."
+    print_warning "Vui lòng khắc phục theo hướng dẫn ở trên hoặc chuyển sang VPS KVM."
+    exit 1
+fi
+print_success "Môi trường VPS phù hợp. Tiếp tục quá trình khôi phục..."
+echo ""
+
 log_info "Bắt đầu quá trình khôi phục Supabase"
 
-echo -e "${BOLD_BLUE}======================================${NC}"
-echo -e "${BOLD_BLUE}  ♻️  KHÔI PHỤC HỆ THỐNG SUPABASE${NC}"
-echo -e "${BOLD_BLUE}======================================${NC}"
+print_title "KHÔI PHỤC HỆ THỐNG SUPABASE"
+print_info "Quá trình này sẽ sao chép cấu hình, database và storage từ bản backup."
 
 # Kiểm tra xem có backup data trong thư mục hiện tại không
 if [ -f "backup_data.tar.gz" ]; then
-    echo -e "${BOLD_YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
+    print_info "Phát hiện dữ liệu backup kèm sẵn trong bộ kit."
     BACKUP_FILE="backup_data.tar.gz"
 fi
 
@@ -26,12 +36,12 @@ fi
 # -------------------------------------------------
 USE_EMBEDDED="n"
 if [ -d "$SCRIPT_DIR/backup_data" ]; then
-    echo -e "${BOLD_YELLOW}📦 Phát hiện dữ liệu backup kèm sẵn trong bộ kit.${NC}"
+    print_info "Phát hiện dữ liệu backup kèm sẵn trong bộ kit."
     read -p "${BOLD_WHITE}👉 Bạn có muốn dùng dữ liệu này để khôi phục luôn không? (y/n): ${NC}" USE_EMBEDDED
 fi
 
 if [ "$USE_EMBEDDED" = "y" ]; then
-    echo -e "${BOLD_GREEN}✅ Sử dụng dữ liệu backup có sẵn.${NC}"
+    print_info "Sử dụng dữ liệu backup có sẵn."
     BACKUP_DIR="$SCRIPT_DIR/backup_data"
     # Kiểm tra các thành phần cần thiết
     if [ ! -f "$BACKUP_DIR/database/full_backup.sql.gz" ] || [ ! -f "$BACKUP_DIR/config/.env" ] || [ ! -f "$BACKUP_DIR/config/docker-compose.yml" ]; then
@@ -278,8 +288,8 @@ try_start() {
     if [ $? -eq 0 ]; then
         # Kiểm tra xem tất cả container có thực sự chạy không
         local all_running=1
-        for cont in $(docker-compose -f "$TARGET_DIR/docker-compose.yml" config --services); do
-            if ! docker-compose -f "$TARGET_DIR/docker-compose.yml" ps "$cont" | grep -q "Up"; then
+        for cont in $($DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" config --services); do
+            if ! $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" ps "$cont" | grep -q "Up"; then
                 all_running=0
                 break
             fi
@@ -348,26 +358,26 @@ fi
 # -------------------------------------------------
 # 6. Khởi động Supabase
 # -------------------------------------------------
-echo "🚀 Khởi động Supabase..."
+print_title "KHỞI ĐỘNG HỆ THỐNG SUPABASE"
+print_info "Bước này sẽ chạy tất cả các container (database, API, studio...)."
+print_info "Quá trình có thể mất vài phút nếu cần tải image Docker."
+print_warning "Đảm bảo máy có kết nối Internet ổn định."
 
-# Kiểm tra dung lượng đĩa trước khi khởi động (cần ít nhất 500MB trống)
 if ! check_disk_space 500 "$TARGET_DIR"; then
-    echo -e "${BOLD_RED}❌ Không đủ dung lượng đĩa để khởi động Supabase.${NC}"
-    echo "   Hãy giải phóng bớt dung lượng hoặc mở rộng ổ đĩa."
     exit 1
 fi
 
-# ---------- LẦN 1 ----------
 SUPABASE_STARTED=0
 if try_start; then
-    echo -e "${BOLD_GREEN}✅ Supabase khởi động thành công.${NC}"
+    print_success "Tất cả container đã khởi động thành công."
     SUPABASE_STARTED=1
 else
-    echo -e "${BOLD_YELLOW}⚠️ Khởi động lần đầu thất bại. Đang phân tích lỗi...${NC}"
+    print_error "Lần khởi động đầu tiên thất bại."
+    print_info "Đang phân tích lỗi và thử các phương án khắc phục..."
 
-    # ----- XỬ LÝ LỖI SYSCTL VỚI 20 CHIẾN LƯỢC & TỰ ĐỘNG KHÔI PHỤC FILE -----
     if echo "$LAST_DOCKER_ERR" | grep -q "net.ipv4.ip_unprivileged_port_start"; then
-        # Tạm thời tắt set -e để các chiến lược không làm script thoát đột ngột
+        print_warning "Nguyên nhân: VPS của bạn đang dùng công nghệ ảo hóa LXC/OpenVZ, không cho phép thay đổi kernel."
+        print_info "Hệ thống sẽ thử 25 cách khác nhau để vượt qua giới hạn này."
         set +e
         echo "   🔍 Phát hiện lỗi sysctl do môi trường ảo hóa LXC/OpenVZ."
         echo "   🧹 Đang dừng mọi container liên quan đến Supabase..."
@@ -670,20 +680,20 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     # Xóa mọi dòng chứa 'sysctls:' hoặc bắt đầu bằng '      - net.'
                     sudo sed -i '/sysctls:/d; /^[[:space:]]*- net\./d' "$TARGET_DIR/docker-compose.yml"
                     if is_yaml_valid; then
-                        echo "      ✅ Đã xóa tất cả cấu hình sysctl."
+                        print_success "Đã xóa tất cả cấu hình sysctl."
                         if try_start; then SUPABASE_STARTED=1; break; fi
                     else
-                        echo "      ❌ Sửa làm hỏng file, khôi phục..."
+                        print_error "Sửa làm hỏng file, khôi phục..."
                         cp "$TARGET_DIR/docker-compose.yml.bak" "$TARGET_DIR/docker-compose.yml"
                     fi
                     ;;
                 22)
-                    echo "      ${WHITE}Thử khởi động với '--no-healthcheck' và không phụ thuộc...${NC}"
+                    print_info "Thử khởi động với '--no-healthcheck' và không phụ thuộc..."
                     $DOCKER_COMPOSE_CMD -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps --no-healthcheck 2>/dev/null || true
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     ;;
                 23)
-                    echo "      ${WHITE}Thử sử dụng 'docker run' trực tiếp cho từng service...${NC}"
+                    print_info "Thử sử dụng 'docker run' trực tiếp cho từng service..."
                     # Lấy image của vector, imgproxy, db từ compose và chạy thủ công với privileged
                     for svc in vector imgproxy db; do
                         img=$(awk -v svc="$svc" '$0~"^  "svc":"{found=1} found&&/image:/{print $2; exit}' "$TARGET_DIR/docker-compose.yml")
@@ -692,24 +702,34 @@ with open('/etc/docker/daemon.json', 'w') as f: json.dump(config, f, indent=4)
                     if try_start; then SUPABASE_STARTED=1; break; fi
                     ;;
                 24)
-                    echo "      ${WHITE}Đề xuất: Liên hệ nhà cung cấp VPS để sửa AppArmor/profile.${NC}"
-                    echo "      Yêu cầu họ chạy: sudo aa-teardown && sudo apparmor_parser -R /etc/apparmor.d/unprivileged_userns"
-                    echo "      Hoặc thiết lập profile unconfined cho container của bạn."
+                    print_info "Đề xuất: Liên hệ nhà cung cấp VPS để sửa AppArmor/profile."
+                    print_info "Yêu cầu họ chạy: sudo aa-teardown && sudo apparmor_parser -R /etc/apparmor.d/unprivileged_userns"
+                    print_info "Hoặc thiết lập profile unconfined cho container của bạn."
                     ;;
                 25)
-                    echo "      ${WHITE}Giải pháp cuối cùng: Sử dụng Docker trong Docker (dind) hoặc máy ảo.${NC}"
-                    echo "      📝 Bạn có thể cài đặt một máy ảo nhỏ (KVM) trong VPS hiện tại và chạy Supabase trên đó."
-                    echo "      📞 Liên hệ hỗ trợ để được hướng dẫn chi tiết."
+                    print_info "Giải pháp cuối cùng: Sử dụng Docker trong Docker (dind) hoặc máy ảo."
+                    print_info "Bạn có thể cài đặt một máy ảo nhỏ (KVM) trong VPS hiện tại và chạy Supabase trên đó."
+                    print_info "Liên hệ hỗ trợ để được hướng dẫn chi tiết."
                     ;;
             esac
             strategy=$((strategy + 1))
         done
 
         if [ $SUPABASE_STARTED -eq 0 ]; then
-            echo -e "${BOLD_RED}❌ Đã thử $max_strategies chiến lược nhưng vẫn không khắc phục được.${NC}"
+            echo ""
+            print_title "THẤT BẠI SAU $max_strategies CHIẾN LƯỢC"
+            print_error "Nguyên nhân gốc rễ: Môi trường ảo hóa LXC/OpenVZ không hỗ trợ Docker đầy đủ."
+            print_warning "Các container cần thay đổi kernel (sysctl) và quyền privileged, nhưng LXC không cho phép."
+            echo ""
+            print_info "Hành động cần làm:"
+            print_step 1 2 "Liên hệ nhà cung cấp VPS, yêu cầu 'bật nesting' hoặc 'cho phép Docker toàn quyền'."
+            print_step 2 2 "Nếu không được, hãy chuyển sang VPS dùng công nghệ KVM (như DigitalOcean, Vultr, AWS EC2)."
+            echo ""
+            print_success "Bạn có thể tham khảo hướng dẫn chi tiết tại README.txt."
         else
-            echo -e "${BOLD_GREEN}✅ Supabase đã khởi động thành công!${NC}"
+            print_success "Supabase đã khởi động thành công!"
         fi
+
         # Bật lại set -e sau khi đã xử lý xong sysctl
         set -e
     # ----- XỬ LÝ CÁC LỖI KHÁC -----

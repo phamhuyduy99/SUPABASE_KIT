@@ -18,6 +18,20 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
+# ---------- KIỂM TRA MÔI TRƯỜNG TRƯỚC KHI BACKUP ----------
+print_title "KIỂM TRA MÔI TRƯỜNG TRƯỚC KHI BACKUP"
+print_info "Đang xác minh máy chủ có đủ điều kiện chạy Supabase không..."
+if ! bash "$SCRIPT_DIR/supa-check-env.sh" >/dev/null 2>&1; then
+    print_warning "VPS của bạn có thể không tương thích hoàn toàn với Supabase."
+    read -p "Bạn có muốn tiếp tục backup không? (y/n): " continue_anyway
+    if [ "$continue_anyway" != "y" ]; then
+        print_info "Đã huỷ backup."
+        exit 0
+    fi
+fi
+print_success "Tiếp tục quá trình backup..."
+echo ""
+
 # Xác định PROJECT_DIR: ưu tiên tham số, sau đó tự dò, cuối cùng hỏi người dùng
 if [ -n "$1" ] && [ "$1" != "--cron" ]; then
     PROJECT_DIR="$1"
@@ -167,12 +181,13 @@ fi
 # 7. Backup database
 # ------------------------------------------------------------
 echo "📦 Đang backup database..."
-BACKUP_DB_FILE="$BACKUP_DATA_DIR/database/full_backup.sql.gz"
+# SỬA LỖI: Đã sửa biến BACKUP_DATA_DIR chưa được định nghĩa thành đường dẫn đúng
+BACKUP_DB_FILE="$PACK_DIR/backup_data/database/full_backup.sql.gz"
 mkdir -p "$(dirname "$BACKUP_DB_FILE")"
 if ! docker exec "$DB_CONT" pg_dumpall -U postgres | gzip > "$BACKUP_DB_FILE"; then
     echo -e "${BOLD_RED}❌ Có lỗi khi dump database...${NC}"
     echo "   Vui lòng kiểm tra trạng thái container và thử lại."
-    rm -rf "$BACKUP_DATA_DIR"
+    rm -rf "$PACK_DIR/backup_data"
     exit 1
 fi
 echo -e "${BOLD_GREEN}✅ Database đã được backup.${NC}"
@@ -181,11 +196,12 @@ echo -e "${BOLD_GREEN}✅ Database đã được backup.${NC}"
 # 8. Backup storage
 # ------------------------------------------------------------
 echo "📦 Đang backup storage..."
-BACKUP_STORAGE_FILE="$BACKUP_DATA_DIR/storage/storage.tar.gz"
+# SỬA LỖI: Đã sửa biến BACKUP_DATA_DIR chưa được định nghĩa thành đường dẫn đúng
+BACKUP_STORAGE_FILE="$PACK_DIR/backup_data/storage/storage.tar.gz"
 mkdir -p "$(dirname "$BACKUP_STORAGE_FILE")"
 STORAGE_VOL=$(docker volume ls -q | grep _storage)
 if [ -n "$STORAGE_VOL" ]; then
-    docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v "$BACKUP_DATA_DIR/storage:/backup" alpine \
+    docker run --rm -v $STORAGE_VOL:/mnt/storage:ro -v "$PACK_DIR/backup_data/storage:/backup" alpine \
     sh -c "cd /mnt/storage && tar czf /backup/storage.tar.gz ."
     echo "   -> Storage (Docker volume) đã được backup."
 else
