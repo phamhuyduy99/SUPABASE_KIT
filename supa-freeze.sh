@@ -198,13 +198,33 @@ else
 fi
 
 # ------------------------------------------------------------
-# 9. Tạo file .tar.gz hoàn chỉnh
+# 9. Tạo file .tar.gz hoàn chỉnh VỚI CẤU TRÚC THƯ MỤC GỐC CHUẨN
 # ------------------------------------------------------------
 echo "📦 Đang tạo file backup hoàn chỉnh..."
-cd "$SCRIPT_DIR"
-if tar czf "$BACKUP_FILE" --exclude='backup_data.tar.gz' --exclude='.git' *; then
+
+# Sử dụng PACK_DIR đã chuẩn bị ở bước 4 & 5 & 6 & 7 & 8
+# PACK_DIR hiện tại đã chứa: supa-*.sh, common.sh, README.txt, và backup_data/
+
+if tar czf "$BACKUP_FILE" -C "$TMP_ROOT" "$PACK_NAME"; then
     echo -e "${BOLD_GREEN}✅ Backup thành công: ${BACKUP_FILE}${NC}"
     log_info "Backup hoàn tất: $BACKUP_FILE"
+    
+    # Tạo script giải nén trên VPS nguồn (để tiện cho người dùng)
+    cat > "$SCRIPT_DIR/supa-extract-backup.sh" <<'EXTRACTEOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKUP_FILE="$(ls -t "$SCRIPT_DIR"/supabase-backup-*.tar.gz 2>/dev/null | head -1)"
+if [ -z "$BACKUP_FILE" ]; then
+    echo "❌ Không tìm thấy file backup .tar.gz trong thư mục hiện tại."
+    exit 1
+fi
+echo "📦 Đang giải nén: $(basename "$BACKUP_FILE")"
+tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
+echo "✅ Đã giải nén vào: $SCRIPT_DIR/$(basename "$BACKUP_FILE" .tar.gz)"
+echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz) && sudo bash supa-start.sh"
+EXTRACTEOF
+    chmod +x "$SCRIPT_DIR/supa-extract-backup.sh"
+    echo -e "${BOLD_GREEN}✅ Script giải nén đã được tạo: $SCRIPT_DIR/supa-extract-backup.sh${NC}"
 else
     echo -e "${BOLD_RED}❌ Tạo file backup thất bại.${NC}"
     exit 1
@@ -517,49 +537,24 @@ if [ -n "$REMOTE" ]; then
         SSH_OK=0
     fi
 
-    # ---------- Tạo package và gửi nếu kết nối OK ----------
+    # ---------- GỬI FILE BACKUP ĐƠN GIẢN SANG VPS ĐÍCH ----------
     if [ $SSH_OK -eq 1 ]; then
-        echo -e "${BOLD_CYAN}   Đang đóng gói và đồng bộ...${NC}"
+        echo -e "${BOLD_CYAN}   Đang đồng bộ file backup...${NC}"
 
-        # Tạo thư mục package trên VPS nguồn
-        PACKAGE_DIR="$PROJECT_DIR/$(basename "$BACKUP_FILE" .tar.gz)-package"
-        mkdir -p "$PACKAGE_DIR"
-
-        # Copy file backup vào package
-        cp "$BACKUP_FILE" "$PACKAGE_DIR/"
-
-        # Tạo script giải nén trong package
-        cat > "$PACKAGE_DIR/supa-extract-backup.sh" <<'EXTRACTEOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BACKUP_FILE="$(ls -t "$SCRIPT_DIR"/supabase-backup-*.tar.gz 2>/dev/null | head -1)"
-if [ -z "$BACKUP_FILE" ]; then
-    echo "❌ Không tìm thấy file backup .tar.gz trong thư mục hiện tại."
-    exit 1
-fi
-echo "📦 Đang giải nén: $(basename "$BACKUP_FILE")"
-tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
-echo "✅ Đã giải nén vào: $SCRIPT_DIR/$(basename "$BACKUP_FILE" .tar.gz)"
-echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz) && sudo bash supa-start.sh"
-EXTRACTEOF
-        chmod +x "$PACKAGE_DIR/supa-extract-backup.sh"
-
-        # Gửi cả thư mục package sang VPS đích
+        # Gửi chỉ file backup sang VPS đích
         DEST_PARENT="${REMOTE_HOME}/supabase_self_host_backup"
         ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" "mkdir -p '$DEST_PARENT'" 2>/dev/null
 
-        if scp -o StrictHostKeyChecking=accept-new -r "$PACKAGE_DIR" "${REMOTE}:${DEST_PARENT}/"; then
-            echo -e "${BOLD_GREEN}✅ Đồng bộ thành công! Thư mục trên VPS đích: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")${NC}"
-            echo -e "   📜 Script giải nén: ${DEST_PARENT}/$(basename "$PACKAGE_DIR")/supa-extract-backup.sh"
+        if scp -o StrictHostKeyChecking=accept-new "$BACKUP_FILE" "${REMOTE}:${DEST_PARENT}/"; then
+            echo -e "${BOLD_GREEN}✅ Đồng bộ thành công! File backup: ${DEST_PARENT}/$(basename "$BACKUP_FILE")${NC}"
+            echo -e "   📜 Để khôi phục, hãy giải nén bằng lệnh:"
+            echo -e "      tar xzf ${DEST_PARENT}/$(basename "$BACKUP_FILE") -C ${DEST_PARENT}/"
         else
             echo -e "${BOLD_RED}❌ Đồng bộ thất bại.${NC}"
             log_info "Đồng bộ sang VPS dự phòng thất bại"
-            echo "   Bạn có thể thử tự copy thư mục bằng lệnh scp:"
-            echo "   scp -r $PACKAGE_DIR ${REMOTE}:${DEST_PARENT}/"
+            echo "   Bạn có thể thử tự copy file bằng lệnh scp:"
+            echo "   scp $BACKUP_FILE ${REMOTE}:${DEST_PARENT}/"
         fi
-
-        # Dọn dẹp package trên VPS nguồn (backup gốc vẫn giữ nguyên)
-        rm -rf "$PACKAGE_DIR"
     fi
 fi
 
@@ -595,5 +590,6 @@ fi
 # ------------------------------------------------------------
 if [ -f "$BACKUP_FILE" ]; then
     sha256sum "$BACKUP_FILE" > "${BACKUP_FILE}.sha256"
-    echo -e "📋 Checksum đã được tạo: ${BACKUP_FILE}.sha256"
+    echo -e "${BOLD_GREEN}📋 Checksum đã được tạo: ${BACKUP_FILE}.sha256${NC}"
+    log_info "Đã tạo checksum cho backup: ${BACKUP_FILE}.sha256"
 fi
