@@ -1,83 +1,124 @@
-====================================================================
-       BỘ KIT SUPABASE SELF-HOSTED – HƯỚNG DẪN SỬ DỤNG
-====================================================================
+# SUPABASE KIT - BỘ CÔNG CỤ QUẢN LÝ SUPABASE TỰ HOST
 
-Chào bạn! Bộ kit này giúp bạn quản lý hệ thống Supabase một cách dễ dàng,
-không cần kiến thức kỹ thuật chuyên sâu.
+## Mô tả
 
-I. YÊU CẦU
-- Máy chủ Ubuntu 20.04, 22.04 hoặc 24.04 (64-bit), RAM tối thiểu 2GB.
-- Có kết nối Internet.
-- Bạn cần có quyền sudo để thực hiện một số tác vụ cài đặt.
-  Nếu chưa có, hãy liên hệ quản trị viên để được cấp quyền bằng lệnh:
-      sudo usermod -aG sudo <tên-người-dùng-của-bạn>
-  Sau đó đăng xuất và đăng nhập lại.
+SUPABASE KIT là bộ công cụ hỗ trợ quản lý hệ thống Supabase tự lưu trữ (self-hosted), giúp đơn giản hóa các tác vụ như backup, restore, cấu hình HTTPS, và giám sát trạng thái hệ thống. Bộ công cụ hỗ trợ cả Linux và Windows, đảm bảo tính linh hoạt trong triển khai.
 
-  Mẹo: Để biết tên người dùng của bạn, gõ lệnh: whoami
+## Tính năng
 
-II. CÀI ĐẶT & CHẠY LẦN ĐẦU (CHỈ MỘT LỆNH)
-1. Nếu bạn có file backup .tar.gz, hãy giải nén nó:
-     tar xzf supabase-backup-XXXXX.tar.gz
-     cd supabase-backup-XXXXX
-   Nếu bạn tải bộ kit từ file ZIP, giải nén và vào thư mục đó.
+- Đóng băng hệ thống (Backup): Sao lưu toàn bộ dữ liệu và cấu hình Supabase
+- Khôi phục hệ thống (Restore): Phục hồi hệ thống từ file backup
+- Kiểm tra trạng thái: Kiểm tra tình trạng các container
+- Kiểm tra tương thích VPS: Kiểm tra hệ thống có đủ điều kiện để chạy Supabase
+- Cài HTTPS & Domain: Cấu hình SSL và domain cho Supabase
+- Thiết lập tự động backup: Lên lịch backup tự động hàng ngày
+- Cấu hình Google Drive: Tích hợp lưu trữ backup lên Google Drive
+- Tải backup từ VPS: Tự động tải file backup mới nhất từ VPS về máy local
 
-2. Chạy lệnh duy nhất:
-     sudo bash supa-start.sh
+## Yêu cầu hệ thống
 
-   Bộ kit sẽ TỰ ĐỘNG phát hiện gói backup tự hành và thiết lập cấu hình,
-   hoặc quét hệ thống như bình thường. Sau đó menu chính sẽ hiện ra.
+- Ubuntu 20.04+, Windows 10/11 64-bit
+- RAM tối thiểu: 2GB
+- Docker và Docker Compose đã được cài đặt
+- Quyền sudo (Linux) hoặc Administrator (Windows)
 
-   Bạn KHÔNG cần nhập đường dẫn thư mục dự án nếu dùng gói backup tự hành.
+## Cài đặt và sử dụng
 
-III. CÁC CHỨC NĂNG TRONG MENU
-- [1] Đóng băng hệ thống (Backup): Tạo file sao lưu toàn bộ dữ liệu và
-      cấu hình Supabase. Có thể tự động đồng bộ sang VPS dự phòng hoặc
-      upload lên Google Drive (nếu đã cấu hình rclone).
-- [2] Khôi phục hệ thống (Restore): Dựng lại toàn bộ Supabase (cấu hình,
-      database, storage, edge functions) từ file backup lên bất kỳ VPS nào,
-      kể cả VPS trắng chưa cài đặt gì. Bạn chỉ cần chỉ định thư mục cài đặt,
-      script sẽ tự lo phần còn lại (cài Docker, khởi động, import dữ liệu).
-- [3] Cài HTTPS & domain: Cài Nginx và chứng chỉ SSL miễn phí cho
-      tên miền của bạn. Script sẽ kiểm tra xung đột cổng, domain
-      và hướng dẫn xử lý.
-- [4] Kiểm tra trạng thái: Xem các container Supabase có đang chạy không.
-- [5] Thiết lập tự động backup: Hẹn giờ backup hàng ngày lúc 2h sáng.
-- [6] Cấu hình Google Drive: Thiết lập kết nối để upload backup lên Google Drive.
-- [0] Thoát.
+### Linux/macOS:
+1. Giải nén thư mục chứa bộ kit
+2. Cấp quyền thực thi cho các script:
+   ```bash
+   chmod +x supa-*.sh common.sh
+   ```
+3. Chạy script chính:
+   ```bash
+   bash supa-start.sh
+   ```
 
-   Lưu ý: Khi khởi động, màn hình sẽ hiển thị rõ chức năng nào đã sẵn sàng,
-   chức năng nào cần cài thêm (và cần sudo hay không).
+### Windows:
+1. Giải nén thư mục chứa bộ kit
+2. Mở PowerShell với quyền Administrator
+3. Cấp quyền thực thi cho script:
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+4. Chạy script chính:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "Start-SupabaseKit.ps1"
+   ```
 
-IV. CÁC TÌNH HUỐNG THƯỜNG GẶP
-1. "Không tìm thấy file .env":
-   Bạn cần nhập đường dẫn đến thư mục chứa Supabase.
-2. "Không có quyền sudo":
-   Script sẽ hướng dẫn bạn lệnh cần chạy (có tên người dùng của bạn).
-3. Lỗi "$'\r': command not found" hoặc "Permission denied":
-   Chạy: sed -i 's/\r$//' supa-*.sh common.sh && chmod +x supa-*.sh common.sh
-4. "Cổng 80/443 đã bị chiếm":
-   Script sẽ hỏi bạn có muốn dừng dịch vụ cũ không.
-5. "Could not get lock /var/lib/apt/lists/lock":
-   Hệ thống đang bận, script sẽ tự động chờ tối đa 5 phút.
-6. Token Google Drive hết hạn:
-   Script sẽ đề xuất chạy 'rclone config reconnect gdrive:' để làm mới.
-7. Xem lịch sử thao tác (log):
-   Mọi thao tác của bạn (backup, restore, cấu hình...) đều được ghi lại
-   kèm thời gian và tên người dùng. Để xem log, chạy lệnh:
-     cat /var/log/supabase-kit.log
-   Nếu không có quyền đọc /var/log, log sẽ được lưu tại ~/supabase-kit.log.
-8. Lỗi "sysctl net.ipv4.ip_unprivileged_port_start: permission denied":
-   Script sẽ tự động comment dòng cấu hình này trong docker-compose.yml và thử lại.
-   Nếu bạn tự sửa, hãy mở file docker-compose.yml, tìm dòng:
-     sysctls:
-       - net.ipv4.ip_unprivileged_port_start=0
-   Và thêm dấu # ở đầu để vô hiệu hóa nó, sau đó chạy:
-     sudo docker compose -f /opt/supabase-restored/docker-compose.yml up -d
+## Giải nén file backup từ Linux trên Windows
 
-V. CẤU HÌNH GOOGLE DRIVE (TÙY CHỌN)
-   ... (giữ nguyên)
+Nếu bạn có file backup `.tar.gz` được tạo từ hệ thống Linux và muốn sử dụng trên Windows, hãy làm theo hướng dẫn sau:
 
-VI. THÔNG TIN LIÊN HỆ HỖ TRỢ
-   Nếu gặp khó khăn, hãy liên hệ người đã cung cấp bộ kit này.
+### Sử dụng script tự động (khuyên dùng)
 
-====================================================================
+Bộ kit cung cấp script [Invoke-ExtractBackup.ps1](file:///c%3A/Users/duyph/Desktop/INTRUST/NATEC_SUPABASE/SUPABASE\SUPABASE_KIT\windows\Invoke-ExtractBackup.ps1) để tự động giải nén file backup:
+
+1. Copy file backup `.tar.gz` vào cùng thư mục với các script của SUPABASE KIT
+2. Mở PowerShell với quyền Administrator
+3. Di chuyển đến thư mục chứa script
+4. Chạy lệnh:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "Invoke-ExtractBackup.ps1"
+```
+
+Script sẽ:
+- Tự động tìm file backup `.tar.gz` mới nhất trong thư mục
+- Giải nén vào thư mục mới với tên có chứa timestamp
+- Hiển thị hướng dẫn tiếp theo để chạy hệ thống
+
+### Tải backup từ VPS về máy local
+
+Từ phiên bản mới, bộ kit hỗ trợ tính năng tải trực tiếp file backup từ VPS về máy local:
+
+#### Trên Linux/macOS:
+1. Trong menu chính, chọn tùy chọn "8. Tải backup từ VPS về máy"
+2. Nhập thông tin:
+   - Địa chỉ VPS (dưới dạng `user@ip`)
+   - Đường dẫn thư mục chứa backup trên VPS (mặc định: `/opt/supabase/backup`)
+   - Thư mục lưu trên máy local (mặc định: `~/Downloads`)
+3. Script sẽ tự động tìm file backup mới nhất và tải về máy
+
+#### Trên Windows:
+1. Trong menu chính, chọn tùy chọn "Tải backup từ VPS về máy"
+2. Nhập thông tin:
+   - Địa chỉ VPS (dưới dạng `user@ip`)
+   - Đường dẫn thư mục chứa backup trên VPS (mặc định: `/opt/supabase/backup`)
+   - Thư mục lưu trên máy local (mặc định: `%USERPROFILE%\Downloads`)
+3. Script sẽ tự động tìm file backup mới nhất và tải về máy
+
+Tính năng này yêu cầu:
+- Máy local đã cấu hình SSH key để kết nối đến VPS (hoặc bạn phải nhập mật khẩu khi được hỏi)
+- Máy local có cài đặt `scp` trong PATH
+- Quyền đọc thư mục chứa backup trên VPS
+
+## Các lỗi thường gặp
+
+1. **Lỗi thực thi script trên Windows**:
+   - Lỗi: "File cannot be loaded because running scripts is disabled..."
+   - Giải pháp: Chạy lệnh `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
+2. **Lỗi Docker không khả dụng**:
+   - Đảm bảo Docker Desktop đang chạy
+   - Với Linux, kiểm tra quyền truy cập vào Docker bằng lệnh: `sudo usermod -aG docker $USER`
+
+3. **Lỗi không tìm thấy thư mục dự án**:
+   - Đảm bảo thư mục chứa file `.env` và `docker-compose.yml`
+   - Nếu dùng backup từ Linux, cần giải nén đúng cấu trúc thư mục
+
+4. **Lỗi liên quan đến sysctl trên container**:
+   - Một số hệ thống ảo hóa (OpenVZ/LXC) không hỗ trợ các tùy chọn sysctl
+   - Script sẽ tự động áp dụng các chiến lược khắc phục tương thích
+
+### Khi gặp lỗi
+
+1. Kiểm tra log đầu ra để xác định nguyên nhân
+2. Đảm bảo hệ thống đáp ứng yêu cầu tối thiểu
+3. Nếu lỗi liên quan đến quyền truy cập, thử chạy với quyền Administrator (Windows) hoặc sudo (Linux)
+4. Thử lại sau khi áp dụng giải pháp phù hợp
+
+## Liên hệ hỗ trợ
+
+Nếu gặp khó khăn trong quá trình sử dụng, vui lòng liên hệ với đội ngũ hỗ trợ kỹ thuật.

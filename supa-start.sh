@@ -1,66 +1,80 @@
 #!/bin/bash
 # ==============================================
-# SUPA-START.SH – Điểm vào duy nhất cho người dùng
+# SUPA-START.SH – Khởi động Supabase Kit trên tất cả nền tảng
 # -------------------------------------------------
-# Sửa lỗi xuống dòng Windows, kiểm tra môi trường
-# (OS, mạng), và khởi chạy menu.
-# Khi không có sudo, hiển thị trạng thái và gợi ý.
+# Script này sẽ xác định hệ điều hành và hướng dẫn người dùng
+# cách sử dụng Supabase Kit phù hợp với nền tảng của họ.
 # ==============================================
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# Detect OS
+detect_os() {
+    case "$(uname -s)" in
+        Linux*)
+            if [[ -f /.dockerenv ]]; then
+                echo "docker"
+            else
+                echo "linux"
+            fi
+            ;;
+        Darwin*)
+            echo "macos"
+            ;;
+        CYGWIN*|MINGW*|MSYS*)
+            echo "windows-cygwin"
+            ;;
+        *)
+            echo "linux"  # Mặc định là Linux
+            ;;
+    esac
+}
 
-# Nạp thư viện chung (chứa tất cả hàm dùng chung)
-source common.sh
-
-echo -e "${BOLD_CYAN}🔧 Sửa lỗi định dạng file (CRLF -> LF)...${NC}"
-sed -i 's/\r$//' *.sh 2>/dev/null
-
-# Lấy tên người dùng thực (ưu tiên SUDO_USER khi chạy sudo)
-if [ -n "$SUDO_USER" ]; then
-    CURRENT_USER="$SUDO_USER"
-else
-    CURRENT_USER="${USER:-$(whoami)}"
-fi
-
-log_info "Khởi động Supabase Kit bởi $CURRENT_USER"
-echo -e "${BOLD_BLUE}🚀 Khởi động Supabase Kit..."
-
-# ===== KIỂM TRA MÔI TRƯỜNG CƠ BẢN =====
-echo -e "${BOLD_CYAN}🔍 Đang kiểm tra môi trường...${NC}"
-# Kiểm tra phiên bản OS
-if ! check_os_version; then
-    exit 1
-fi
-# Kiểm tra kết nối mạng
-if ! check_network; then
-    exit 1
-fi
-
-# Nếu có quyền sudo, chạy thẳng menu (với sudo để giữ quyền)
-if sudo -n true 2>/dev/null; then
-    echo "✅ Bạn có quyền sudo. Đang vào menu..."
-    sudo bash supa-menu.sh
-else
-    echo -e "${BOLD_YELLOW}⚠️  BẠN KHÔNG CÓ QUYỀN SUDO${NC}"
-    echo "   Một số chức năng quan trọng sẽ không hoạt động:"
-    echo "   - Cài đặt Docker, Nginx, Certbot"
-    echo "   - Đồng bộ backup sang VPS khác"
-    echo "   - Thiết lập cron job tự động"
+# Main function
+main() {
+    echo "🚀 Khởi động Supabase Kit"
+    echo "=========================="
+    
+    OS_TYPE=$(detect_os)
+    
+    case "$OS_TYPE" in
+        "linux"|"docker"|"macos")
+            echo "Phát hiện hệ điều hành: $OS_TYPE"
+            echo ""
+            echo "🔹 Để sử dụng Supabase Kit trên Linux/macOS:"
+            echo "   1. cd linux/"
+            echo "   2. chmod +x supa-*.sh common.sh"
+            echo "   3. ./supa-menu.sh"
+            echo ""
+            echo "🔹 Hoặc sử dụng trực tiếp các script:"
+            echo "   ./supa-freeze.sh     # Backup hệ thống"
+            echo "   ./supa-restore.sh    # Khôi phục hệ thống"
+            echo "   ./supa-status.sh     # Kiểm tra trạng thái"
+            echo "   ./supa-check-env.sh  # Kiểm tra môi trường"
+            ;;
+        "windows-cygwin")
+            echo "Phát hiện hệ điều hành: Windows (Cygwin/MSYS2)"
+            echo ""
+            echo "🔹 Để sử dụng Supabase Kit trên Windows:"
+            echo "   1. Mở PowerShell với quyền Administrator"
+            echo "   2. cd windows/"
+            echo "   3. .\\Start-SupabaseKit.ps1"
+            echo ""
+            echo "🔹 Nếu không có quyền Administrator:"
+            echo "   - Có thể gặp hạn chế khi cài đặt HTTPS"
+            echo "   - Một số chức năng yêu cầu quyền cao hơn"
+            ;;
+        *)
+            echo "Không thể xác định hệ điều hành chính xác."
+            echo "Vui lòng xem README.md để biết cách sử dụng phù hợp với hệ điều hành của bạn."
+            ;;
+    esac
+    
     echo ""
-    echo "Bạn có hai lựa chọn:"
-    echo "1. Tiếp tục vào menu (các chức năng không cần sudo vẫn dùng được)."
-    echo "2. Thoát và yêu cầu quản trị cấp quyền sudo."
-    echo ""
-    echo "📌 Để được cấp quyền sudo, nhờ người có quyền root chạy:"
-    echo "   sudo usermod -aG sudo $CURRENT_USER"
-    echo "   Sau đó đăng xuất và đăng nhập lại."
-    echo ""
-    read -p "${BOLD_WHITE}👉 Bạn muốn tiếp tục không? (y/n): ${NC}" continue_choice
-    if [ "$continue_choice" = "y" ]; then
-        bash supa-menu.sh
-    else
-        echo -e "${BOLD_GREEN}Tạm biệt.${NC}"
-        exit 0
-    fi
-fi
+    echo "📖 Tài liệu hướng dẫn:"
+    echo "   - README.md          # Tài liệu tổng quan"
+    echo "   - README-WINDOWS.md  # Hướng dẫn cho Windows"
+    echo "   - README-MACOS.md    # Hướng dẫn cho macOS"
+    echo "   - HUONG_DAN_SU_DUNG.md # Hướng dẫn chi tiết bằng tiếng Việt"
+}
+
+# Call main function
+main "$@"

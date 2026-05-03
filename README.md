@@ -1,85 +1,109 @@
-====================================================================
-       BỘ KIT SUPABASE SELF-HOSTED – HƯỚNG DẪN SỬ DỤNG
-====================================================================
+# Supabase Kit Toàn Năng
 
-Chào bạn! Bộ kit này giúp bạn quản lý hệ thống Supabase một cách dễ dàng,
-không cần kiến thức kỹ thuật chuyên sâu.
+**Supabase Kit** là bộ công cụ quản trị và vận hành hệ thống Supabase với các tính năng:
+- Đóng băng hệ thống (Backup)
+- Khôi phục hệ thống (Restore)
+- Kiểm tra trạng thái hệ thống
+- Kiểm tra môi trường tương thích
+- Hỗ trợ đa nền tảng: Linux, macOS, Windows
+- Giao diện trực quan, màu sắc rõ ràng
+- Hướng dẫn bằng tiếng Việt
 
-I. YÊU CẦU
-- Máy chủ Ubuntu 20.04, 22.04 hoặc 24.04 (64-bit), RAM tối thiểu 2GB.
-- Có kết nối Internet.
-- Bạn cần có quyền sudo để thực hiện một số tác vụ cài đặt.
-  Nếu chưa có, hãy liên hệ quản trị viên để được cấp quyền bằng lệnh:
-      sudo usermod -aG sudo <tên-người-dùng-của-bạn>
-  Sau đó đăng xuất và đăng nhập lại.
+## 📁 Cấu trúc thư mục
 
-  Mẹo: Để biết tên người dùng của bạn, gõ lệnh: whoami
+```
+supabase-kit/
+├── linux/                 # Script cho Linux & macOS
+│   ├── common.sh
+│   ├── supa-menu.sh
+│   ├── supa-freeze.sh
+│   ├── supa-restore.sh
+│   ├── supa-setup-nginx.sh
+│   ├── supa-status.sh
+│   ├── supa-setup-gdrive.sh
+│   ├── supa-check-env.sh
+│   ├── supa-freeze-enhanced.sh    # Phiên bản nâng cao
+│   ├── supa-restore-enhanced.sh   # Phiên bản nâng cao
+│   └── supa-start.sh      # Điểm vào chung cho Linux/macOS
+├── windows/               # Script PowerShell cho Windows
+│   ├── SupabaseKit.psm1   # Module chứa hàm dùng chung
+│   ├── Start-SupabaseKit.ps1
+│   ├── Invoke-Freeze.ps1
+│   ├── Invoke-Restore.ps1
+│   ├── Invoke-Status.ps1
+│   ├── Invoke-CheckEnv.ps1
+│   └── Install-DockerDesktop.ps1 (tùy chọn)
+├── README.md              # Hướng dẫn tổng quan
+├── README-WINDOWS.md      # Hướng dẫn riêng cho Windows
+├── README-MACOS.md        # Hướng dẫn riêng cho macOS
+├── HUONG_DAN_SU_DUNG.md   # Hướng dẫn sử dụng chi tiết cho người mới
+├── enhanced-features-guide.sh  # Hướng dẫn sử dụng tính năng nâng cao
+├── quick-start.sh         # Hướng dẫn nhanh
+├── backup-config.sh       # Sao lưu cấu hình kit
+├── check-completeness.sh  # Kiểm tra tính toàn vẹn
+├── initialize-kit.sh      # Khởi tạo cấu trúc kit
+└── setup-permissions.sh   # Cấp quyền thực thi
+```
 
-II. CÀI ĐẶT & CHẠY LẦN ĐẦU (CHỈ MỘT LỆNH)
-1. Upload file ZIP lên VPS, giải nén vào thư mục dự án Supabase (nơi có file .env).
-   Ví dụ:
-     unzip SUPABASE_KIT.zip -d supabase-kit
-     cd supabase-kit
+## ✅ Yêu cầu hệ thống
 
-2. Chạy lệnh duy nhất:
-     bash supa-start.sh
+- **RAM**: Tối thiểu 4GB (khuyên dùng 8GB trở lên)
+- **Ổ cứng**: Tối thiểu 20GB trống
+- **Internet**: Kết nối ổn định
+- **Docker & Docker Compose**: Đã cài đặt
 
-   Bộ kit sẽ TỰ ĐỘNG quét hệ thống và hiển thị những chức năng đã sẵn sàng,
-   những gì cần cài thêm. Sau đó bạn có thể vào menu chính.
+## 🚀 Cách sử dụng
 
-   Nếu gặp lỗi "Permission denied", hãy chạy:
-     chmod +x supa-*.sh common.sh
-     sudo bash supa-start.sh
+### Linux/macOS:
 
-III. CÁC CHỨC NĂNG TRONG MENU
-- [1] Đóng băng hệ thống (Backup): Tạo file sao lưu toàn bộ dữ liệu và
-      cấu hình Supabase. File backup tạo ra là một GÓI TỰ HÀNH: giải nén
-      ra là bạn có ngay bộ kit kèm dữ liệu, sẵn sàng khôi phục trên VPS khác.
-- [2] Khôi phục hệ thống (Restore): Dựng lại toàn bộ Supabase (cấu hình,
-      database, storage, edge functions) từ file backup. Khi chạy từ bộ kit
-      có sẵn backup_data, script sẽ hỏi bạn có muốn dùng dữ liệu đó không.
-      Chọn 'y' và nhập thư mục cài đặt là xong – không cần chỉ định file.
-- [3] Cài HTTPS & domain: Cài Nginx và chứng chỉ SSL miễn phí cho
-      tên miền của bạn.
-- [4] Kiểm tra trạng thái: Xem các container Supabase có đang chạy không.
-- [5] Thiết lập tự động backup: Hẹn giờ backup hàng ngày lúc 2h sáng.
-- [6] Cấu hình Google Drive: Thiết lập kết nối để upload backup lên Google Drive.
-- [0] Thoát.
+1. Giải nén thư mục `supabase-kit`
+2. Di chuyển vào thư mục `linux`
+3. Chạy lệnh:
+   ```bash
+   chmod +x *.sh
+   ./supa-start.sh
+   ```
 
-IV. SỬ DỤNG GÓI BACKUP TỰ HÀNH
-   Khi bạn tải file backup .tar.gz (từ Google Drive, VPS khác...), hãy:
-   1. Giải nén: tar xzf ten-file.tar.gz
-   2. Di chuyển vào thư mục vừa tạo: cd ten-thu-muc
-   3. Chạy: sudo bash supa-start.sh
-   4. Vào menu, chọn [2] Khôi phục hệ thống.
-   5. Khi được hỏi "Bạn có muốn dùng dữ liệu backup kèm sẵn không?", chọn 'y'.
-   6. Nhập thư mục cài đặt (Enter để dùng mặc định) và domain (nếu có).
-   7. Chờ quá trình hoàn tất – bạn sẽ có một hệ thống Supabase sống động!
+### Windows:
 
-V. SỬ DỤNG FILE BACKUP TỪ GOOGLE DRIVE ĐỂ KHÔI PHỤC
-   Sau khi backup lên Google Drive, bạn có thể tải file đó về bất kỳ VPS nào
-   để khôi phục. Có hai cách:
-   Cách 1 (tự động): Trong menu Restore, nhập đường dẫn theo cú pháp:
-      gdrive:supabase-backups/tên-file.tar.gz
-   Script sẽ tự động tải file từ Google Drive về và tiến hành khôi phục.
-   Cách 2 (thủ công): Vào Google Drive trên trình duyệt, tải file .tar.gz
-      về máy tính, rồi upload lên VPS mới. Sau đó trong Restore nhập đường dẫn file.
+1. Giải nén thư mục `supabase-kit`
+2. Mở PowerShell với quyền Administrator
+3. Di chuyển vào thư mục `windows`
+4. Chạy lệnh:
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   .\Start-SupabaseKit.ps1
+   ```
 
-VI. CÁC TÌNH HUỐNG THƯỜNG GẶP
-1. "Không tìm thấy file .env":
-   Bạn cần nhập đường dẫn đến thư mục chứa Supabase.
-2. "Không có quyền sudo":
-   Script sẽ hướng dẫn bạn lệnh cần chạy (có tên người dùng của bạn).
-3. Lỗi "$'\r': command not found" hoặc "Permission denied":
-   Chạy: sed -i 's/\r$//' supa-*.sh common.sh && chmod +x supa-*.sh common.sh
-4. "Cổng 80/443 đã bị chiếm":
-   Script sẽ hỏi bạn có muốn dừng dịch vụ cũ không.
-5. "Could not get lock /var/lib/apt/lists/lock":
-   Hệ thống đang bận, script sẽ tự động chờ tối đa 5 phút.
-6. Token Google Drive hết hạn:
-   Script sẽ đề xuất chạy 'rclone config reconnect gdrive:' để làm mới.
+## 🔧 Các tính năng chính
 
-VI. THÔNG TIN LIÊN HỆ HỖ TRỢ
-   Nếu gặp khó khăn, hãy liên hệ người đã cung cấp bộ kit này.
+- **Backup/Freeze**: Sao lưu toàn bộ cấu hình và dữ liệu hệ thống
+- **Restore**: Khôi phục hệ thống từ bản backup
+- **Status Check**: Kiểm tra trạng thái các dịch vụ đang chạy
+- **Environment Check**: Kiểm tra môi trường hệ thống có tương thích không
+- **Nginx Setup**: Thiết lập reverse proxy cho Supabase
+- **Google Drive Sync**: Đồng bộ backup với Google Drive
 
-====================================================================
+## 📚 Tài liệu chi tiết
+
+- [Hướng dẫn sử dụng chi tiết cho người mới bắt đầu](HUONG_DAN_SU_DUNG.md)
+- [Hướng dẫn sử dụng cho Windows](README-WINDOWS.md)
+- [Hướng dẫn sử dụng cho macOS](README-MACOS.md)
+- [Hướng dẫn tính năng nâng cao](enhanced-features-guide.sh)
+
+## 🔄 Sao lưu giữa các hệ điều hành
+
+Hướng dẫn chi tiết về cách thực hiện backup từ Linux sang Windows và ngược lại, cũng như cách chuyển đổi giữa các hệ điều hành khác nhau, đã được cung cấp trong [file hướng dẫn chi tiết](HUONG_DAN_SU_DUNG.md).
+
+## 🛠️ Gỡ rối
+
+Nếu gặp lỗi trong quá trình sử dụng:
+
+- Đảm bảo Docker và Docker Compose đã được cài đặt đúng cách
+- Kiểm tra quyền truy cập thư mục
+- Với Windows, đảm bảo chạy PowerShell với quyền Administrator
+- Nếu sử dụng macOS, cần cài Docker Desktop cho Mac
+
+## 🤝 Đóng góp
+
+Nếu bạn thấy Supabase Kit hữu ích, hãy đánh dấu ⭐ cho dự án!
