@@ -140,25 +140,25 @@ mkdir -p "$PACK_DIR/backup_data"/{config,database,storage,volumes}
 echo -e "📁 Chuẩn bị gói backup tự hành: ${BOLD_CYAN}$PACK_NAME${NC}"
 
 # ------------------------------------------------------------
-# 5. Copy toàn bộ script của kit vào gốc gói backup
+# 5. Copy toàn bộ script của kit vào gói backup
 # ------------------------------------------------------------
-# Tạo thư mục linux và copy các script Linux vào đó
+# Tạo thư mục linux và copy toàn bộ script Linux
 mkdir -p "$PACK_DIR/linux"
 cp "$SCRIPT_DIR"/supa-*.sh "$PACK_DIR/linux/" 2>/dev/null
 cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/linux/" 2>/dev/null
 [ -f "$SCRIPT_DIR/README.txt" ] && cp "$SCRIPT_DIR/README.txt" "$PACK_DIR/"
 
-# Copy toàn bộ script Windows (nếu có thư mục windows cùng cấp với linux)
+# Copy toàn bộ script Windows nếu có
 if [ -d "$SCRIPT_DIR/../windows" ]; then
-    cp -r "$SCRIPT_DIR/../windows" "$PACK_DIR/"
+    mkdir -p "$PACK_DIR/windows"
+    cp -r "$SCRIPT_DIR/../windows"/* "$PACK_DIR/windows/"
     echo "   ✅ Đã đính kèm script cho Windows."
 else
     echo "   ⚠️ Không tìm thấy thư mục windows để đính kèm."
 fi
 
-# Tạo script khôi phục độc lập cho Windows (self-contained)
-mkdir -p "$PACK_DIR/windows"
-cat > "$PACK_DIR/windows/restore-windows.ps1" <<'WINEOF'
+# Tạo script restore độc lập cho Windows (đặt ở gốc và trong windows/)
+cat > "$PACK_DIR/restore-windows.ps1" <<'WINEOF'
 # Script khôi phục Supabase cho Windows (yêu cầu Docker Desktop)
 Write-Host "🔄 Bắt đầu khôi phục Supabase từ backup trên Windows" -ForegroundColor Yellow
 
@@ -259,6 +259,7 @@ if ($dlg.FileName -ne "") {
 
 Read-Host "Ấn Enter để thoát"
 WINEOF
+cp "$PACK_DIR/restore-windows.ps1" "$PACK_DIR/windows/"
 echo "   ✅ Đã tạo restore-windows.ps1."
 
 # ------------------------------------------------------------
@@ -352,7 +353,7 @@ fi
 echo "📦 Đang giải nén: $(basename "$BACKUP_FILE")"
 tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
 echo "✅ Đã giải nén vào: $SCRIPT_DIR/$(basename "$BACKUP_FILE" .tar.gz)"
-echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz) && sudo bash supa-start.sh"
+echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz)/linux && sudo bash supa-start.sh"
 EXTRACTEOF
     chmod +x "$SCRIPT_DIR/supa-extract-backup.sh"
     echo -e "${BOLD_GREEN}✅ Script giải nén đã được tạo: $SCRIPT_DIR/supa-extract-backup.sh${NC}"

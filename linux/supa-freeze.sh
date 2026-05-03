@@ -140,11 +140,127 @@ mkdir -p "$PACK_DIR/backup_data"/{config,database,storage,volumes}
 echo -e "📁 Chuẩn bị gói backup tự hành: ${BOLD_CYAN}$PACK_NAME${NC}"
 
 # ------------------------------------------------------------
-# 5. Copy toàn bộ script của kit vào gốc gói backup
+# 5. Copy toàn bộ script của kit vào gói backup
 # ------------------------------------------------------------
-cp "$SCRIPT_DIR"/supa-*.sh "$PACK_DIR/" 2>/dev/null
-cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/" 2>/dev/null
+# Tạo thư mục linux và copy toàn bộ script Linux vào đó
+mkdir -p "$PACK_DIR/linux"
+cp "$SCRIPT_DIR"/supa-*.sh "$PACK_DIR/linux/" 2>/dev/null
+cp "$SCRIPT_DIR"/common.sh "$PACK_DIR/linux/" 2>/dev/null
 [ -f "$SCRIPT_DIR/README.txt" ] && cp "$SCRIPT_DIR/README.txt" "$PACK_DIR/"
+
+# Copy toàn bộ script Windows (nếu có thư mục windows cùng cấp với linux)
+if [ -d "$SCRIPT_DIR/../windows" ]; then
+    mkdir -p "$PACK_DIR/windows"
+    cp -r "$SCRIPT_DIR/../windows"/* "$PACK_DIR/windows/"
+    echo "   ✅ Đã đính kèm script cho Windows."
+else
+    echo "   ⚠️ Không tìm thấy thư mục windows để đính kèm."
+fi
+
+# Tạo script khôi phục độc lập cho Windows (self-contained)
+cat > "$PACK_DIR/restore-windows.ps1" <<'WINEOF'
+# Script khôi phục Supabase cho Windows (yêu cầu Docker Desktop)
+Write-Host "🔄 Bắt đầu khôi phục Supabase từ backup trên Windows" -ForegroundColor Yellow
+
+# Kiểm tra Docker Desktop
+if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host "❌ Docker Desktop chưa được cài đặt!" -ForegroundColor Red
+    Write-Host "👉 Vui lòng cài Docker Desktop từ: https://www.docker.com/products/docker-desktop" -ForegroundColor White
+    Read-Host "Ấn Enter để thoát"
+    exit 1
+}
+
+# Kiểm tra Docker đang chạy
+$dockerProc = Get-Process -Name "docker desktop" -ErrorAction SilentlyContinue
+if (!$dockerProc) {
+    Write-Host "⚠️ Docker Desktop chưa được khởi động!" -ForegroundColor Yellow
+    Write-Host "👉 Vui lòng khởi động Docker Desktop và đợi biểu tượng màu xanh lá cây." -ForegroundColor White
+    Read-Host "Ấn Enter sau khi đã khởi động Docker"
+}
+
+# Yêu cầu người dùng chọn file backup
+Add-Type -AssemblyName System.Windows.Forms
+$dlg = New-Object System.Windows.Forms.OpenFileDialog
+$dlg.InitialDirectory = [Environment]::GetFolderPath("Desktop")
+$dlg.Filter = "Backup Files (*.tar.gz)|*.tar.gz|All Files (*.*)|*.*"
+$dlg.Title = "Chọn file backup Supabase"
+$dlg.ShowDialog() | Out-Null
+
+if ($dlg.FileName -ne "") {
+    $backupFile = $dlg.FileName
+    Write-Host "📦 File backup đã chọn: $backupFile" -ForegroundColor Green
+    
+    # Tạo thư mục tạm để giải nén
+    $tempDir = Join-Path $env:TEMP "supabase_restore_$(Get-Date -Format 'yyyyMMddHHmmss')"
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+    
+    # Giải nén file backup
+    Write-Host "📂 Đang giải nén file backup..." -ForegroundColor Cyan
+    try {
+        # Sử dụng 7-Zip nếu có, nếu không thì dùng tar (có sẵn trong Windows 10+)
+        if (Get-Command 7z -ErrorAction SilentlyContinue) {
+            7z x $backupFile -o$tempDir
+        } else {
+            tar -xzf $backupFile -C $tempDir
+        }
+        
+        # Tìm thư mục backup_data trong thư mục giải nén
+        $extractedDirs = Get-ChildItem -Path $tempDir -Directory
+        foreach ($dir in $extractedDirs) {
+            $backupDataPath = Join-Path $dir.FullName "backup_data"
+            if (Test-Path $backupDataPath) {
+                $sourcePath = $backupDataPath
+                break
+            }
+        }
+        
+        if ($sourcePath) {
+            # Hỏi người dùng nơi muốn khôi phục
+            Add-Type -AssemblyName System.Windows.Forms
+            $folderDlg = New-Object System.Windows.Forms.FolderBrowserDialog
+            $folderDlg.Description = "Chọn thư mục để khôi phục Supabase"
+            $folderDlg.RootFolder = "MyComputer"
+            $folderDlg.ShowDialog() | Out-Null
+            
+            if ($folderDlg.SelectedPath -ne "") {
+                $targetDir = $folderDlg.SelectedPath
+                Write-Host "🎯 Thư mục đích: $targetDir" -ForegroundColor Green
+                
+                # Copy dữ liệu backup vào thư mục đích
+                Copy-Item -Recurse -Path (Join-Path $sourcePath "*") -Destination $targetDir
+                
+                # Copy script Windows vào thư mục đích
+                $scriptSourceDir = Split-Path -Parent $backupFile
+                $windowsScripts = Join-Path $scriptSourceDir "windows"
+                if (Test-Path $windowsScripts) {
+                    Copy-Item -Recurse -Path $windowsScripts -Destination $targetDir
+                }
+                
+                Write-Host "✅ Khôi phục dữ liệu hoàn tất!" -ForegroundColor Green
+                Write-Host "👉 Vào thư mục $targetDir, chạy Start-SupabaseKit.ps1 để bắt đầu." -ForegroundColor Cyan
+                
+                # Mở thư mục đích
+                Invoke-Item $targetDir
+            } else {
+                Write-Host "❌ Người dùng đã hủy chọn thư mục." -ForegroundColor Red
+            }
+        } else {
+            Write-Host "❌ Không tìm thấy thư mục backup_data trong file backup." -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "❌ Lỗi khi giải nén file: $($_.Exception.Message)" -ForegroundColor Red
+    } finally {
+        # Dọn dẹp thư mục tạm
+        Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "❌ Người dùng chưa chọn file backup." -ForegroundColor Red
+}
+
+Read-Host "Ấn Enter để thoát"
+WINEOF
+cp "$PACK_DIR/restore-windows.ps1" "$PACK_DIR/windows/"
+echo "   ✅ Đã tạo restore-windows.ps1."
 
 # ------------------------------------------------------------
 # 6. Sao lưu cấu hình (bỏ qua db/data để tránh lỗi permission)
@@ -237,7 +353,7 @@ fi
 echo "📦 Đang giải nén: $(basename "$BACKUP_FILE")"
 tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
 echo "✅ Đã giải nén vào: $SCRIPT_DIR/$(basename "$BACKUP_FILE" .tar.gz)"
-echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz) && sudo bash supa-start.sh"
+echo "👉 cd $(basename "$BACKUP_FILE" .tar.gz)/linux && sudo bash supa-start.sh"
 EXTRACTEOF
     chmod +x "$SCRIPT_DIR/supa-extract-backup.sh"
     echo -e "${BOLD_GREEN}✅ Script giải nén đã được tạo: $SCRIPT_DIR/supa-extract-backup.sh${NC}"
