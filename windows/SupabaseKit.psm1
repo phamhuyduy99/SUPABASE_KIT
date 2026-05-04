@@ -15,12 +15,42 @@ function Write-ColorOutput {
     $host.UI.RawUI.ForegroundColor = $fc
 }
 
-function Write-Success($msg) { Write-ColorOutput Green "✓ $msg" }
-function Write-ErrorMsg($msg) { Write-ColorOutput Red "✗ $msg" }
-function Write-WarningMsg($msg) { Write-ColorOutput Yellow "⚠ $msg" }
-function Write-Info($msg) { Write-ColorOutput Cyan "ℹ $msg" }
-function Write-Title($msg) { Write-ColorOutput Magenta "=== $msg ===" }
-function Write-Step($current, $total, $msg) { Write-ColorOutput White "[$current/$total] $msg" }
+# Helper functions for colored output - MUST be multi-line for proper module export
+function Write-Success {
+    param([string]$msg)
+    # Display success message with green checkmark
+    Write-ColorOutput Green "✓ $msg"
+}
+
+function Write-ErrorMsg {
+    param([string]$msg)
+    # Display error message with red X mark
+    Write-ColorOutput Red "✗ $msg"
+}
+
+function Write-WarningMsg {
+    param([string]$msg)
+    # Display warning message with yellow warning symbol
+    Write-ColorOutput Yellow "⚠ $msg"
+}
+
+function Write-Info {
+    param([string]$msg)
+    # Display info message with cyan info symbol
+    Write-ColorOutput Cyan "ℹ $msg"
+}
+
+function Write-Title {
+    param([string]$msg)
+    # Display title message with magenta equals signs
+    Write-ColorOutput Magenta "=== $msg ==="
+}
+
+function Write-Step {
+    param([int]$current, [int]$total, [string]$msg)
+    # Display step progress in format [current/total] message
+    Write-ColorOutput White "[$current/$total] $msg"
+}
 
 function Test-DockerAvailable {
     if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
