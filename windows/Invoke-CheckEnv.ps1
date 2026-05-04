@@ -24,10 +24,10 @@ Write-Host "   Phien ban: $($osVersion.Major).$($osVersion.Minor).$($osVersion.B
 
 # Windows 10/11 co major version >= 10
 if ($osVersion.Major -ge 10) {
-    Write-Success "✅ He dieu hanh duoc ho tro (Windows 10/11)."
+    Write-Success "[OK] He dieu hanh duoc ho tro (Windows 10/11)."
     $compat = $true
 } else {
-    Write-ErrorMsg "❌ He dieu hanh khong duoc ho tro (can Windows 10 tro len)."
+    Write-ErrorMsg "[ERROR] He dieu hanh khong duoc ho tro (can Windows 10 tro len)."
     $compat = $false
 }
 
@@ -41,9 +41,9 @@ Write-Host "   CPU: $($cpu.Name.Trim())" -ForegroundColor White
 # Kiem tra kien truc CPU (x64)
 $cpuArch = $env:PROCESSOR_ARCHITECTURE
 if ($cpuArch -eq "AMD64") {
-    Write-Success "✅ Kien truc CPU x64 duoc ho tro."
+    Write-Success "[OK] Kien truc CPU x64 duoc ho tro."
 } else {
-    Write-WarningMsg "⚠️ Kien truc CPU khong phai x64: $cpuArch"
+    Write-WarningMsg "[WARN] Kien truc CPU khong phai x64: $cpuArch"
     $compat = $false
 }
 
@@ -53,9 +53,9 @@ $ramMB = [math]::Round($ram.Sum / 1MB)
 Write-Host "   RAM: $ramMB MB" -ForegroundColor White
 
 if ($ramMB -ge 2048) {
-    Write-Success "✅ RAM du (>= 2GB): ${ramMB}MB"
+    Write-Success "[OK] RAM du (>= 2GB): ${ramMB}MB"
 } else {
-    Write-WarningMsg "⚠️ RAM thap (< 2GB): ${ramMB}MB - Supabase co the hoat dong cham"
+    Write-WarningMsg "[WARN] RAM thap (< 2GB): ${ramMB}MB - Supabase co the hoat dong cham"
 }
 
 # ---------- 3. Kiem tra Docker ----------
@@ -69,17 +69,17 @@ if (Get-Command "docker" -ErrorAction SilentlyContinue) {
     try {
         $dockerInfo = docker info 2>$null
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "✅ Docker hoat dong tot."
+            Write-Success "[OK] Docker hoat dong tot."
         } else {
-            Write-ErrorMsg "❌ Docker khong chay duoc. Hay khoi dong Docker Desktop."
+            Write-ErrorMsg "[ERROR] Docker khong chay duoc. Hay khoi dong Docker Desktop."
             $compat = $false
         }
     } catch {
-        Write-ErrorMsg "❌ Docker khong chay duoc. Hay khoi dong Docker Desktop."
+        Write-ErrorMsg "[ERROR] Docker khong chay duoc. Hay khoi dong Docker Desktop."
         $compat = $false
     }
 } else {
-    Write-ErrorMsg "❌ Docker chua cai dat. Vui long cai Docker Desktop."
+    Write-ErrorMsg "[ERROR] Docker chua cai dat. Vui long cai Docker Desktop."
     $compat = $false
 }
 
@@ -89,12 +89,12 @@ Write-Info "4. Kiem tra ao hoa..."
 $hyperVFeature = Get-WindowsOptionalFeature -Online | Where-Object { $_.FeatureName -eq "Microsoft-Hyper-V-All" }
 if ($hyperVFeature) {
     if ($hyperVFeature.State -eq "Enabled") {
-        Write-Success "✅ Hyper-V duoc kich hoat."
+        Write-Success "[OK] Hyper-V duoc kich hoat."
     } else {
-        Write-WarningMsg "⚠️ Hyper-V khong duoc kich hoat. Docker co the hoat dong cham hon."
+        Write-WarningMsg "[WARN] Hyper-V khong duoc kich hoat. Docker co the hoat dong cham hon."
     }
 } else {
-    Write-WarningMsg "⚠️ Khong tim thay Hyper-V. Docker Desktop su dung WSL 2 backend."
+    Write-WarningMsg "[WARN] Khong tim thay Hyper-V. Docker Desktop su dung WSL 2 backend."
 }
 
 # ---------- 5. Kiem tra WSL2 (neu can) ----------
@@ -103,20 +103,20 @@ Write-Info "5. Kiem tra WSL2 (yeu cau cho Docker tren Windows)..."
 try {
     $wslVersion = wsl --version 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "✅ WSL duoc cai dat: $wslVersion"
+        Write-Success "[OK] WSL duoc cai dat: $wslVersion"
         
         # Kiem tra phien ban WSL mac dinh
         $wslDefaultVersion = wsl --set-default-version 2 2>$null
         if ($?) {
-            Write-Success "✅ WSL2 la phien ban mac dinh."
+            Write-Success "[OK] WSL2 la phien ban mac dinh."
         } else {
-            Write-WarningMsg "⚠️ Khong the thiet lap WSL2 la mac dinh."
+            Write-WarningMsg "[WARN] Khong the thiet lap WSL2 la mac dinh."
         }
     } else {
-        Write-WarningMsg "⚠️ WSL khong duoc cai dat (WSL2 duoc Docker khuyen nghi)."
+        Write-WarningMsg "[WARN] WSL khong duoc cai dat (WSL2 duoc Docker khuyen nghi)."
     }
 } catch {
-    Write-WarningMsg "⚠️ WSL khong duoc cai dat (WSL2 duoc Docker khuyen nghi)."
+    Write-WarningMsg "[WARN] WSL khong duoc cai dat (WSL2 duoc Docker khuyen nghi)."
 }
 
 # ---------- 6. Kiem tra dung luong dia ----------
@@ -128,9 +128,9 @@ $freeSpaceMB = [math]::Round($drive.Free / 1MB)
 Write-Host "   O dia hien tai: $($drive.Name) ($([math]::Round($drive.TotalSize / 1GB)) GB tong) - $freeSpaceMB MB trong" -ForegroundColor White
 
 if ($freeSpaceMB -gt 5000) {  # > 5GB
-    Write-Success "✅ Dung luong dia du cho Supabase."
+    Write-Success "[OK] Dung luong dia du cho Supabase."
 } else {
-    Write-WarningMsg "⚠️ Dung luong dia thap: $freeSpaceMB MB trong. Supabase can it nhat ~5GB."
+    Write-WarningMsg "[WARN] Dung luong dia thap: $freeSpaceMB MB trong. Supabase can it nhat ~5GB."
     if ($freeSpaceMB -lt 2000) {
         $compat = $false
     }
@@ -140,9 +140,9 @@ if ($freeSpaceMB -gt 5000) {  # > 5GB
 Write-Info "7. Kiem tra ket noi Internet..."
 
 if (Test-NetworkConnectivity) {
-    Write-Success "✅ Ket noi Internet on dinh."
+    Write-Success "[OK] Ket noi Internet on dinh."
 } else {
-    Write-ErrorMsg "❌ Khong co ket noi Internet."
+    Write-ErrorMsg "[ERROR] Khong co ket noi Internet."
     $compat = $false
 }
 
