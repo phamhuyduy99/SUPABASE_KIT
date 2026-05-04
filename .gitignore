@@ -1,0 +1,40 @@
+# ============================================
+# SUPABASE KIT - .gitignore
+# ============================================
+
+# Backup files - DO NOT COMMIT (contains sensitive data & large files)
+supabase-backup-*.tar/
+supabase-backup-*.tar.gz
+*.sha256
+
+# Temporary directories
+/tmp/
+/temp/
+*.tmp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+/var/log/supabase-kit.log
+~/supabase-kit.log
+
+# Environment files (should not be committed)
+.env.local
+.env.production
+
+# Node modules (if any)
+node_modules/
+
+# PowerShell module cache
+__pycache__/
