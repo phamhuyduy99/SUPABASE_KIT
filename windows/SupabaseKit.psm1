@@ -16,28 +16,29 @@ function Write-ColorOutput {
 }
 
 # Helper functions for colored output - MUST be multi-line for proper module export
+# Note: Using ASCII-safe symbols to avoid encoding issues in PowerShell modules
 function Write-Success {
     param([string]$msg)
     # Display success message with green checkmark
-    Write-ColorOutput Green "✓ $msg"
+    Write-ColorOutput Green "[OK] $msg"
 }
 
 function Write-ErrorMsg {
     param([string]$msg)
     # Display error message with red X mark
-    Write-ColorOutput Red "✗ $msg"
+    Write-ColorOutput Red "[ERROR] $msg"
 }
 
 function Write-WarningMsg {
     param([string]$msg)
     # Display warning message with yellow warning symbol
-    Write-ColorOutput Yellow "⚠ $msg"
+    Write-ColorOutput Yellow "[WARN] $msg"
 }
 
 function Write-Info {
     param([string]$msg)
     # Display info message with cyan info symbol
-    Write-ColorOutput Cyan "ℹ $msg"
+    Write-ColorOutput Cyan "[INFO] $msg"
 }
 
 function Write-Title {
