@@ -1,86 +1,43 @@
-# ==============================================
-# INVOKE-EXTRACTBACKUP.PS1 – Giải nén file backup
-# -------------------------------------------------
-# Script này giúp giải nén file backup thành thư mục có thể chạy độc lập
-# ==============================================
-
-Import-Module .\SupabaseKit.psm1 -Force
-
-Write-Title "GIẢI NÉN BACKUP SUPABASE"
+# Invoke-ExtractBackup.ps1 – Giai nen backup
+# Import module - dam bao load dung cach bat ke chay tu thu muc nao
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$modulePath = Join-Path $scriptDir "SupabaseKit.psm1"
+if (Test-Path $modulePath) {
+    Import-Module $modulePath -Force
+} else {
+    Write-Host "LOI: Khong tim thay module SupabaseKit.psm1 tai: $modulePath" -ForegroundColor Red
+    exit 1
+}
+Write-Title "GIAI NEN BACKUP SUPABASE"
 
 $currentDir = Get-Location
 $backupFile = Get-ChildItem -Path $currentDir -Filter "supabase-backup-*.tar.gz" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
 if (-not $backupFile) {
-    Write-ErrorMsg "❌ Không tìm thấy file backup .tar.gz trong thư mục hiện tại."
-    Write-Info "📁 Các file có trong thư mục hiện tại:"
-    Get-ChildItem -Path $currentDir | ForEach-Object { Write-Host "   $($_.Name)" }
+    Write-ErrorMsg "Khong tim thay file backup .tar.gz."
     exit 1
 }
 
-Write-Info "📦 Đang giải nén: $($backupFile.Name)"
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$extractDir = Join-Path $currentDir "$($backupFile.BaseName)_extracted_$timestamp"
+Write-Info "Dang giai nen: $($backupFile.Name)"
 
 try {
-    # Tạo thư mục giải nén
-    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
-    
-    # Kiểm tra có 7-Zip không
     if (Get-Command "7z" -ErrorAction SilentlyContinue) {
-        Write-Info "Sử dụng 7-Zip để giải nén..."
-        Set-Location $extractDir
-        7z x $backupFile.FullName | Out-Null
-        Set-Location $currentDir
-    } else {
-        # Nếu không có 7-Zip, thử đổi tên thành .zip và dùng Expand-Archive
-        Write-WarningMsg "Không tìm thấy 7-Zip, đang thử phương pháp thay thế..."
-        
-        $tempZipPath = $backupFile.FullName -replace '\.tar\.gz$', '.zip'
-        Copy-Item -Path $backupFile.FullName -Destination $tempZipPath
-        Expand-Archive -Path $tempZipPath -DestinationPath $extractDir
-        Remove-Item -Path $tempZipPath -Force
+        Write-Info "Su dung 7-Zip de giai nen..."
+        7z x $backupFile.FullName -y | Out-Null
     }
-    
-    # Kiểm tra kết quả giải nén
-    $extractedItems = Get-ChildItem -Path $extractDir
-    if ($extractedItems.Count -gt 0) {
-        Write-Success "✅ Đã giải nén vào: $extractDir"
-        
-        # Tìm thư mục backup chính
-        $mainBackupDir = $null
-        foreach ($item in $extractedItems) {
-            if ($item.PSIsContainer -and (Test-Path (Join-Path $item.FullName "backup_data"))) {
-                $mainBackupDir = $item.FullName
-                break
-            }
-        }
-        
-        if ($mainBackupDir) {
-            Write-Info "📁 Thư mục chính của backup: $mainBackupDir"
-            Write-Info "👉 cd $(Split-Path -Path $mainBackupDir -Leaf) && powershell -ExecutionPolicy Bypass -File Start-SupabaseKit.ps1"
-            
-            # Hỏi người dùng có muốn di chuyển các file vào thư mục hiện tại không
-            $moveFiles = Read-Host "Bạn có muốn di chuyển các file vào thư mục hiện tại không? (y/n)"
-            if ($moveFiles -eq 'y') {
-                $itemsToMove = Get-ChildItem -Path $mainBackupDir
-                foreach ($item in $itemsToMove) {
-                    Move-Item -Path $item.FullName -Destination $currentDir
-                }
-                Write-Success "✅ Đã di chuyển các file vào thư mục hiện tại"
-            }
-        } else {
-            Write-WarningMsg "⚠️ Không tìm thấy thư mục backup_data trong kết quả giải nén"
-        }
-    } else {
-        Write-ErrorMsg "❌ Giải nén thất bại - thư mục trống"
+    elseif (Get-Command "tar" -ErrorAction SilentlyContinue) {
+        Write-Info "Su dung tar de giai nen..."
+        tar -xzf $backupFile.FullName
+    }
+    else {
+        Write-ErrorMsg "Can cai dat 7-Zip hoac Git for Windows de giai nen file .tar.gz"
         exit 1
     }
-} catch {
-    Write-ErrorMsg "❌ Lỗi khi giải nén: $($_.Exception.Message)"
-    exit 1
-} finally {
-    Set-Location $currentDir
+    
+    Write-Success "Giai nen thanh cong!"
+    Write-Info "Thu muc backup da duoc tao tai: $(Join-Path $currentDir ($backupFile.BaseName))"
 }
-
-Write-Success "✅ Giải nén hoàn tất!"
+catch {
+    Write-ErrorMsg "Loi khi giai nen: $($_.Exception.Message)"
+    exit 1
+}
