@@ -18,7 +18,22 @@ Write-Title "KHOI PHUC HE THONG SUPABASE (DAY DU CHIEN LUOC)"
 
 # ---------- KIEM TRA MOI TRUONG ----------
 Write-Info "Dang kiem tra moi truong..."
-if (!(Test-DockerAvailable)) { exit 1 }
+# Fix: Add proper Docker availability check with better error handling
+try {
+    $dockerInfoOutput = docker info 2>&1
+    if ($LASTEXITCODE -ne 0 -or $dockerInfoOutput -match "error" -or $dockerInfoOutput -match "failed") {
+        Write-ErrorMsg "Docker Desktop chua chay hoac gap loi. Hay mo Docker Desktop va thu lai."
+        exit 1
+    }
+    # Also check if docker command exists
+    if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-ErrorMsg "Docker chua duoc cai dat. Vui long cai Docker Desktop tu https://www.docker.com/products/docker-desktop/"
+        exit 1
+    }
+} catch {
+    Write-ErrorMsg "Loi khi kiem tra Docker: $($_.Exception.Message)"
+    exit 1
+}
 if (!(Test-Network)) { exit 1 }
 Write-Success "Moi truong Docker va mang on dinh."
 
@@ -61,29 +76,59 @@ Remove-OldContainers
 
 # ---------- SAO CHEP CAU HINH & VOLUMES ----------
 Write-Step 3 6 "SAO CHEP CAU HINH"
-Copy-Item "$backupDataDir\config\.env" $targetDir
-Copy-Item "$backupDataDir\config\docker-compose.yml" $targetDir
+Copy-Item "$backupDataDir\config\.env" $targetDir -Force
+Copy-Item "$backupDataDir\config\docker-compose.yml" $targetDir -Force
 $volBackup = Join-Path $backupDataDir "volumes"
-if (Test-Path $volBackup) { Copy-Item "$volBackup\*" $targetDir -Recurse }
+if (Test-Path $volBackup) { 
+    # Fix: Add -Force parameter to overwrite existing directories
+    Copy-Item "$volBackup\*" $targetDir -Recurse -Force 
+}
 
 # ---------- SUA SYSCTL ----------
 Repair-SysctlConfig "$targetDir\docker-compose.yml"
 
 # ---------- KHOI DONG (25 CHIEN LUOC) ----------
 Write-Step 4 6 "KHOI DONG SUPABASE"
-$composeCmd = Get-DockerComposeCommand
+# Fix: Better docker compose command detection with proper error handling
+$composeCmd = $null
+try {
+    $composeTestOutput = docker compose version 2>&1
+    if ($LASTEXITCODE -eq 0 -and $composeTestOutput -notmatch "not recognized") {
+        $composeCmd = "docker compose"
+    } elseif (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+        $composeCmd = "docker-compose"
+    } else {
+        Write-ErrorMsg "Khong tim thay docker compose. Hay dam bao Docker Desktop da cai dat dung cach."
+        exit 1
+    }
+} catch {
+    Write-ErrorMsg "Loi khi kiem tra docker compose: $($_.Exception.Message)"
+    exit 1
+}
+
 $originalCompose = Join-Path $targetDir "docker-compose.yml.original"
-Copy-Item "$targetDir\docker-compose.yml" $originalCompose
+Copy-Item "$targetDir\docker-compose.yml" $originalCompose -Force
 
 function Try-Start {
-    & $composeCmd -f "$targetDir\docker-compose.yml" up -d 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $services = & $composeCmd -f "$targetDir\docker-compose.yml" config --services
-        foreach ($svc in $services) {
-            $status = & $composeCmd -f "$targetDir\docker-compose.yml" ps $svc 2>$null | Select-String "Up"
-            if (-not $status) { return $false }
+    param($composeCommand, $targetDirectory)
+    
+    # Fix: Check if compose command actually works before using it
+    try {
+        & $composeCommand -f "$targetDirectory\docker-compose.yml" up -d 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $services = & $composeCommand -f "$targetDirectory\docker-compose.yml" config --services 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                return $false
+            }
+            foreach ($svc in $services) {
+                $status = & $composeCommand -f "$targetDirectory\docker-compose.yml" ps $svc 2>$null | Select-String "Up"
+                if (-not $status) { return $false }
+            }
+            return $true
         }
-        return $true
+    } catch {
+        # Command doesn't exist or failed
+        return $false
     }
     return $false
 }
@@ -94,7 +139,7 @@ $strategies = @(
         Write-Info "Chien luoc 1: Xoa dong sysctl (ip_unprivileged_port_start)..."
         $content = Get-Content "$targetDir\docker-compose.yml" -Raw
         $content -replace '.*ip_unprivileged_port_start.*', '' | Set-Content "$targetDir\docker-compose.yml"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 2: Them privileged: true cho cac service can thiet
     {
@@ -106,7 +151,7 @@ $strategies = @(
             if ($l -match '^\s+image:') { $new += '    privileged: true' }
         }
         $new | Set-Content "$targetDir\docker-compose.yml"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 3: Them security_opt va cap_add
     {
@@ -123,7 +168,7 @@ $strategies = @(
             }
         }
         $new | Set-Content "$targetDir\docker-compose.yml"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 4: Cau hinh Docker daemon (tang ulimit)
     {
@@ -135,7 +180,7 @@ $strategies = @(
             $json | ConvertTo-Json -Depth 5 | Set-Content $daemonConfig
             Restart-Service *docker*
         }
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 5: Ha cap containerd (khong ho tro tren Windows)
     {
@@ -148,7 +193,7 @@ $strategies = @(
         Write-Info "Chien luoc 6: Doi tag image sang phien ban cu hon (v0.23.11)..."
         $content = Get-Content "$targetDir\docker-compose.yml" -Raw
         $content -replace ':latest', ':v0.23.11' | Set-Content "$targetDir\docker-compose.yml"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 7: Huong dan thu runtime khac (sysbox)
     {
@@ -189,14 +234,14 @@ $strategies = @(
             }
         }
         $new | Set-Content "$targetDir\docker-compose.yml"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 12: Dat bien moi truong bo qua sysctl
     {
         Write-Info "Chien luoc 12: Dat bien moi truong COMPOSE_IGNORE_ORPHANS..."
         Add-Content "$targetDir\.env" "COMPOSE_IGNORE_ORPHANS=True"
         $env:COMPOSE_IGNORE_ORPHANS = "True"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 13: Khoi dong rieng tung service
     {
@@ -205,13 +250,13 @@ $strategies = @(
             & $composeCmd -f "$targetDir\docker-compose.yml" up -d $svc 2>$null
         }
         & $composeCmd -f "$targetDir\docker-compose.yml" up -d 2>$null
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 14: Xoa toan bo volumes va networks cu
     {
         Write-Info "Chien luoc 14: Xoa toan bo volumes va networks cu..."
         docker system prune -af --volumes 2>$null
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 15: Su dung Docker Compose V1 neu co
     {
@@ -219,7 +264,7 @@ $strategies = @(
         if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
             & $composeCmd -f "$targetDir\docker-compose.yml" down 2>$null
             docker-compose -f "$targetDir\docker-compose.yml" up -d 2>$null
-            Try-Start
+            Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
         } else {
             Write-WarningMsg "docker-compose (V1) khong kha dung."
             $false
@@ -229,7 +274,7 @@ $strategies = @(
     {
         Write-Info "Chien luoc 16: Khoi dong voi co --compatibility..."
         & $composeCmd -f "$targetDir\docker-compose.yml" --compatibility up -d 2>$null
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 17: Cap nhat Docker len phien ban moi nhat (khong tu dong)
     {
@@ -242,7 +287,7 @@ $strategies = @(
         Write-Info "Chien luoc 18: Khoi dong lai dich vu Docker..."
         Restart-Service *docker*
         Start-Sleep -Seconds 5
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 19: File docker-compose toi thieu
     {
@@ -250,7 +295,7 @@ $strategies = @(
         $min = Join-Path $env:TEMP "minimal-compose.yml"
         Get-Content "$targetDir\docker-compose.yml" | Select-String -Pattern "^(  vector:|  imgproxy:|  db:)" -Context 0,20 | Out-File $min
         & $composeCmd -f $min up -d 2>$null
-        $result = Try-Start
+        $result = Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
         Remove-Item $min -ErrorAction SilentlyContinue
         $result
     },
@@ -265,13 +310,13 @@ $strategies = @(
         Write-Info "Chien luoc 21: Vo hieu hoa toan bo sysctl trong docker-compose.yml..."
         $content = Get-Content "$targetDir\docker-compose.yml" -Raw
         $content -replace 'sysctls:', '' -replace '^\s*- net\.', '' | Set-Content "$targetDir\docker-compose.yml"
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 22: Khoi dong voi --no-deps --no-healthcheck
     {
         Write-Info "Chien luoc 22: Khoi dong voi --no-deps --no-healthcheck..."
         & $composeCmd -f "$targetDir\docker-compose.yml" up -d --no-deps --no-healthcheck 2>$null
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 23: Dung docker run truc tiep
     {
@@ -281,7 +326,7 @@ $strategies = @(
             $img = (Select-String -Path "$targetDir\docker-compose.yml" -Pattern "^  ${svc}:" -Context 0,5 | ForEach-Object { $_.Context.PostContext } | Select-String "image:" | ForEach-Object { $_ -replace '.*image:\s*', '' })
             if ($img) { docker run -d --name "supabase-$svc" --privileged $img 2>$null }
         }
-        Try-Start
+        Try-Start -composeCommand $composeCmd -targetDirectory $targetDir
     },
     # Chien luoc 24: Lien he nha cung cap VPS sua AppArmor (khong ap dung)
     {
@@ -301,15 +346,22 @@ $started = $false
 for ($i = 0; $i -lt $strategies.Count; $i++) {
     $strategyNum = $i + 1
     Write-Info "Dang thu chien luoc ${strategyNum}/25..."
-    if (& $strategies[$i]) {
-        Write-Success "Thanh cong voi chien luoc ${strategyNum}!"
-        $started = $true
-        break
+    try {
+        if (& $strategies[$i]) {
+            Write-Success "Thanh cong voi chien luoc ${strategyNum}!"
+            $started = $true
+            break
+        }
+    } catch {
+        Write-WarningMsg "Chien luoc ${strategyNum} gap loi: $($_.Exception.Message)"
     }
     # Khoi phuc file compose goc neu bi hong
-    Copy-Item $originalCompose "$targetDir\docker-compose.yml" -Force
+    if (Test-Path $originalCompose) {
+        Copy-Item $originalCompose "$targetDir\docker-compose.yml" -Force
+    }
 }
 
+# Fix: Proper error handling - only report success if actually started
 if (-not $started) {
     Write-ErrorMsg "Da thu tat ca 25 chien luoc nhung khong khoi dong duoc."
     Write-WarningMsg "Nguyen nhan: moi truong ao hoa khong ho tro day du Docker."
@@ -346,6 +398,8 @@ if ($dbContainer -and (Wait-DatabaseReady $dbContainer)) {
     }
 } else {
     Write-ErrorMsg "Khong tim thay container database hoac database khong san sang."
+    # Fix: Don't continue if database import fails
+    exit 1
 }
 
 # ---------- HOAN TAT ----------
